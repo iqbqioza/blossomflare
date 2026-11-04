@@ -238,6 +238,13 @@ describe("upload allowlist management", () => {
     expect(removed.status).toBe(204);
   });
 
+  it("rejects an unsafe uploader cursor", async () => {
+    const response = await adminFetch(
+      `/api/admin/uploaders?cursor=${"9".repeat(40)}:${"ab".repeat(32)}`,
+    );
+    expect(response.status).toBe(400);
+  });
+
   it("paginates the allowlist", async () => {
     const users = Array.from({ length: 3 }, () => newUser());
     for (const user of users) {
@@ -374,21 +381,14 @@ describe("admin data endpoints", () => {
     await allowUploader(user.pubkey);
     const uploaded = await uploadAs(user.secret, pngBytes);
     const now = Math.floor(Date.now() / 1000);
+    const windowStart = Math.floor(now / 3600);
 
-    for (let index = 0; index < 20; index++) {
-      await testEnv.DB.prepare(
-        `INSERT INTO reports (id, pubkey, created_at, received_at, event_json)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-        .bind(
-          `${index.toString(16).padStart(64, "0")}`,
-          user.pubkey,
-          now,
-          now,
-          "{}",
-        )
-        .run();
-    }
+    await testEnv.DB.prepare(
+      `INSERT INTO report_rate_limits (pubkey, window_start, count)
+       VALUES (?, ?, ?)`,
+    )
+      .bind(user.pubkey, windowStart, 20)
+      .run();
 
     const report = finalizeEvent(
       {
@@ -405,5 +405,43 @@ describe("admin data endpoints", () => {
       body: JSON.stringify(report),
     });
     expect(posted.status).toBe(429);
+  });
+
+  it("enforces the report rate limit atomically under concurrency", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
+    const now = Math.floor(Date.now() / 1000);
+
+    const responses = await Promise.all(
+      Array.from({ length: 30 }, (_, index) => {
+        const report = finalizeEvent(
+          {
+            kind: 1984,
+            created_at: now + index,
+            tags: [["x", uploaded.sha256, "malware"]],
+            content: `Concurrent report ${index}`,
+          },
+          user.secret,
+        );
+        return SELF.fetch(`${ADMIN_URL}/report`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(report),
+        });
+      }),
+    );
+
+    const accepted = responses.filter((response) => response.status === 200);
+    const limited = responses.filter((response) => response.status === 429);
+    expect(accepted).toHaveLength(20);
+    expect(limited).toHaveLength(10);
+
+    const count = await testEnv.DB.prepare(
+      "SELECT COUNT(*) AS count FROM reports WHERE pubkey = ?",
+    )
+      .bind(user.pubkey)
+      .first<{ count: number }>();
+    expect(count?.count).toBe(20);
   });
 });

@@ -150,6 +150,8 @@ export async function resetDb(): Promise<void> {
   await testEnv.DB.batch([
     testEnv.DB.prepare("DELETE FROM blobs"),
     testEnv.DB.prepare("DELETE FROM blob_tombstones"),
+    testEnv.DB.prepare("DELETE FROM used_auth_events"),
+    testEnv.DB.prepare("DELETE FROM report_rate_limits"),
     testEnv.DB.prepare("DELETE FROM reports"),
     testEnv.DB.prepare("DELETE FROM upload_allowlist"),
     testEnv.DB.prepare(
