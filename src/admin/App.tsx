@@ -141,12 +141,6 @@ export default function App() {
             <h1 className="mt-2 text-lg font-semibold tracking-tight">
               Admin
             </h1>
-            <p
-              className="mt-3 truncate font-mono text-[11px] text-neutral-500"
-              title={encodeNpub(session.adminPubkey)}
-            >
-              {shortHex(encodeNpub(session.adminPubkey), 12)}
-            </p>
           </div>
 
           <nav
