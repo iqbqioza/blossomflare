@@ -234,10 +234,6 @@ function Login(props: {
         <h1 className="mt-4 text-2xl font-semibold tracking-tight">
           Admin sign-in
         </h1>
-        <p className="mt-3 text-sm leading-6 text-neutral-400">
-          Sign in with your admin npub. Your private key never leaves your browser
-          extension, and this browser stays signed in for seven days.
-        </p>
 
         {!available && (
           <div className="mt-5 border border-neutral-800 bg-black px-4 py-3 text-sm text-neutral-300">
@@ -259,11 +255,6 @@ function Login(props: {
         >
           {props.loggingIn ? "Checking..." : "Sign in with NIP-07"}
         </button>
-
-        <p className="mt-4 text-xs leading-5 text-neutral-500">
-          Sign-in requires the pubkey configured in the Cloudflare secret{" "}
-          <code className="text-neutral-400">ADMIN_NPUB</code>.
-        </p>
       </div>
     </div>
   );
