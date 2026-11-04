@@ -91,6 +91,7 @@ export function blossomAuth(
 
 interface Nip98Options {
   includeExpiration?: boolean;
+  expirationOffset?: number;
   standardBase64?: boolean;
 }
 
@@ -108,7 +109,7 @@ export async function nip98Auth(
     ["nonce", crypto.randomUUID()],
   ];
   if (options.includeExpiration !== false) {
-    tags.push(["expiration", String(now + 60)]);
+    tags.push(["expiration", String(now + (options.expirationOffset ?? 60))]);
   }
 
   if (body !== undefined) {

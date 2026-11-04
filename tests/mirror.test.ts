@@ -67,6 +67,39 @@ describe("mirror", () => {
     expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(pngBytes);
   });
 
+  it("rejects a replayed mirror authorization token", async () => {
+    let calls = 0;
+    stubFetch(async () => {
+      calls += 1;
+      return new Response(pngBytes, {
+        status: 200,
+        headers: { "Content-Type": "image/png" },
+      });
+    });
+
+    const hash = await sha256Hex(pngBytes);
+    const authorization = blossomAuth(adminSecret(), {
+      action: "upload",
+      hash,
+    });
+    const send = () =>
+      SELF.fetch(`${ADMIN_URL}/mirror`, {
+        method: "PUT",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: "https://cdn.example.com/image.png" }),
+      });
+
+    const first = await send();
+    expect(first.status).toBe(201);
+
+    const replay = await send();
+    expect(replay.status).toBe(401);
+    expect(calls).toBe(1);
+  });
+
   it("rejects a hash mismatch", async () => {
     stubFetch(async () =>
       new Response(pngBytes, {
