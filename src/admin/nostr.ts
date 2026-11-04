@@ -57,6 +57,7 @@ export async function nip98Header(
     ["u", url],
     ["method", method.toUpperCase()],
     ["expiration", String(now + 60)],
+    ["nonce", crypto.randomUUID()],
   ];
 
   if (body !== undefined && body !== null) {
@@ -83,6 +84,7 @@ export async function blossomAuthHeader(
       ["x", sha256],
       ["server", location.hostname],
       ["expiration", String(now + 300)],
+      ["nonce", crypto.randomUUID()],
     ],
     content,
   );
