@@ -8,6 +8,9 @@
   "observability": {
     "enabled": true
   },
+  "previews": {
+    // Previews intentionally have no production D1/R2 bindings.
+  },
   "assets": {
     "directory": "./dist/admin",
     "binding": "ASSETS",
