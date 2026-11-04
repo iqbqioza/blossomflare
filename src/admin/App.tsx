@@ -46,13 +46,37 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "reports", label: "Reports" },
 ];
 
+function isTab(value: string): value is Tab {
+  return TABS.some((item) => item.id === value);
+}
+
+function tabFromHash(hash: string): Tab {
+  const value = hash.replace(/^#\/?/, "");
+  return isTab(value) ? value : "dashboard";
+}
+
 export default function App() {
   const [session, setSession] = useState<AdminSettings | null>(null);
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>(() => tabFromHash(window.location.hash));
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [restoring, setRestoring] = useState(true);
+
+  useEffect(() => {
+    const sync = () => {
+      const next = tabFromHash(window.location.hash);
+      setTab(next);
+      const expected = `#/${next}`;
+      if (window.location.hash !== expected) {
+        window.history.replaceState(null, "", expected);
+      }
+    };
+
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,10 +172,10 @@ export default function App() {
             className="flex gap-1 overflow-x-auto p-3 md:flex-col md:overflow-visible"
           >
             {TABS.map((item) => (
-              <button
+              <a
                 key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
+                href={`#/${item.id}`}
+                aria-current={tab === item.id ? "page" : undefined}
                 className={`whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors ${
                   tab === item.id
                     ? "bg-white font-medium text-black"
@@ -159,7 +183,7 @@ export default function App() {
                 }`}
               >
                 {item.label}
-              </button>
+              </a>
             ))}
           </nav>
 
