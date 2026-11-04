@@ -37,7 +37,7 @@ export async function signWithNip07(
 ): Promise<NostrEvent> {
   const provider = window.nostr;
   if (!provider) {
-    throw new Error("NIP-07 対応のブラウザ拡張が見つかりません");
+    throw new Error("No NIP-07-compatible browser extension found");
   }
   return provider.signEvent({
     kind,
@@ -117,16 +117,16 @@ export function parsePubkeyInput(
 ): { hex: string } | { error: string } {
   const value = input.trim();
   if (value.length === 0) {
-    return { error: "npub または hex を入力してください" };
+    return { error: "Enter an npub or hex pubkey" };
   }
   if (value.startsWith("nsec1")) {
-    return { error: "秘密鍵（nsec）は入力しないでください" };
+    return { error: "Never enter a private key (nsec)" };
   }
   if (/^[0-9a-f]{64}$/i.test(value)) {
     return { hex: value.toLowerCase() };
   }
   if (!value.startsWith("npub1")) {
-    return { error: "npub1... または64桁の hex を入力してください" };
+    return { error: "Enter an npub1... or a 64-character hex pubkey" };
   }
 
   try {
@@ -138,7 +138,7 @@ export function parsePubkeyInput(
     // fall through
   }
 
-  return { error: "npub の形式が正しくありません" };
+  return { error: "Invalid npub" };
 }
 
 export function encodeNpub(hex: string): string {
@@ -156,7 +156,7 @@ export function shortHex(value: string, length = 12): string {
 }
 
 export function formatDate(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString("ja-JP");
+  return new Date(unixSeconds * 1000).toLocaleString("en-US");
 }
 
 export function formatBytes(bytes: number): string {
