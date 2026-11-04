@@ -30,10 +30,10 @@ import {
 type Tab = "dashboard" | "blobs" | "uploaders" | "reports";
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "dashboard", label: "ダッシュボード" },
+  { id: "dashboard", label: "Dashboard" },
   { id: "blobs", label: "Blob" },
-  { id: "uploaders", label: "アップロード許可" },
-  { id: "reports", label: "通報" },
+  { id: "uploaders", label: "Upload permissions" },
+  { id: "reports", label: "Reports" },
 ];
 
 export default function App() {
@@ -45,10 +45,10 @@ export default function App() {
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       setSession(null);
-      setError("管理者として認証できませんでした");
+      setError("Could not authenticate as an administrator");
       return;
     }
-    setError(err instanceof Error ? err.message : "不明なエラーが発生しました");
+    setError(err instanceof Error ? err.message : "An unknown error occurred");
   }, []);
 
   const login = async () => {
@@ -93,7 +93,7 @@ export default function App() {
               setError(null);
             }}
           >
-            ログアウト
+            Sign out
           </button>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4">
@@ -123,7 +123,7 @@ export default function App() {
               className="text-rose-300 hover:text-rose-100"
               onClick={() => setError(null)}
             >
-              閉じる
+              Dismiss
             </button>
           </div>
         )}
@@ -160,14 +160,14 @@ function Login(props: {
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-sky-400">
           Blossomflare
         </p>
-        <h1 className="mt-2 text-2xl font-semibold">管理者ログイン</h1>
+        <h1 className="mt-2 text-2xl font-semibold">Admin sign-in</h1>
         <p className="mt-3 text-sm leading-6 text-slate-400">
-          管理者の npub で署名してログインします。秘密鍵はブラウザ拡張の外へ出ません。
+          Sign in with your admin npub. Your private key never leaves your browser extension.
         </p>
 
         {!available && (
           <div className="mt-5 rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
-            NIP-07 対応のブラウザ拡張（Alby など）をインストールしてください。
+            Install a NIP-07-compatible browser extension such as Alby.
           </div>
         )}
 
@@ -183,11 +183,11 @@ function Login(props: {
           onClick={() => void props.onLogin()}
           className="mt-6 w-full rounded-lg bg-sky-500 px-4 py-2.5 font-medium text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
         >
-          {props.loggingIn ? "確認中…" : "NIP-07 でログイン"}
+          {props.loggingIn ? "Checking..." : "Sign in with NIP-07"}
         </button>
 
         <p className="mt-4 text-xs leading-5 text-slate-500">
-          ログインには Cloudflare のシークレット `ADMIN_NPUB` に設定された pubkey が必要です。
+          Sign-in requires the pubkey configured in the Cloudflare secret `ADMIN_NPUB`.
         </p>
       </div>
     </div>
@@ -217,16 +217,16 @@ function Dashboard(props: { onError: (error: unknown) => void }) {
   }, [props.onError]);
 
   if (loading) return <Loading />;
-  if (stats === null) return <Empty text="統計を取得できませんでした" />;
+  if (stats === null) return <Empty text="Could not load statistics" />;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCard label="Blob 数" value={stats.blobCount.toLocaleString("ja-JP")} />
-      <StatCard label="合計サイズ" value={formatBytes(stats.totalBytes)} />
-      <StatCard label="通報" value={stats.reportCount.toLocaleString("ja-JP")} />
+      <StatCard label="Blobs" value={stats.blobCount.toLocaleString("en-US")} />
+      <StatCard label="Total size" value={formatBytes(stats.totalBytes)} />
+      <StatCard label="Reports" value={stats.reportCount.toLocaleString("en-US")} />
       <StatCard
-        label="許可リスト"
-        value={stats.uploaderCount.toLocaleString("ja-JP")}
+        label="Allowlist"
+        value={stats.uploaderCount.toLocaleString("en-US")}
       />
     </div>
   );
@@ -280,7 +280,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
   const applyFilter = () => {
     const value = filterInput.trim().toLowerCase();
     if (value !== "" && !/^[0-9a-f]{64}$/.test(value)) {
-      setMessage("pubkey は64桁の hex で指定してください");
+      setMessage("Pubkey must be a 64-character hex string");
       return;
     }
     setFilter(value);
@@ -294,33 +294,33 @@ function Blobs(props: { onError: (error: unknown) => void }) {
     setMessage(null);
     try {
       const descriptor = await uploadBlob(file);
-      setMessage(`アップロードしました: ${descriptor.url}`);
+      setMessage(`Uploaded: ${descriptor.url}`);
       reload();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "アップロードに失敗しました");
+      setMessage(error instanceof Error ? error.message : "Upload failed");
     } finally {
       setUploading(false);
     }
   };
 
   const onDelete = async (blob: BlobRecord) => {
-    if (!window.confirm(`次の blob を削除しますか？\n${blob.sha256}`)) return;
+    if (!window.confirm(`Delete this blob?\n${blob.sha256}`)) return;
     setMessage(null);
     try {
       await deleteBlob(blob.sha256);
-      setMessage("Blob を削除しました");
+      setMessage("Blob deleted");
       reload();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "削除に失敗しました");
+      setMessage(error instanceof Error ? error.message : "Delete failed");
     }
   };
 
   const copy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      setMessage("URL をコピーしました");
+      setMessage("URL copied");
     } catch {
-      setMessage("クリップボードにコピーできませんでした");
+      setMessage("Could not copy to clipboard");
     }
   };
 
@@ -328,13 +328,13 @@ function Blobs(props: { onError: (error: unknown) => void }) {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900 p-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="font-semibold">Blob 管理</h2>
+          <h2 className="font-semibold">Blob management</h2>
           <p className="mt-1 text-sm text-slate-400">
-            アップロードと削除は NIP-07 で署名されます。
+            Uploads and deletions are signed with NIP-07.
           </p>
         </div>
         <label className="cursor-pointer rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400">
-          {uploading ? "アップロード中…" : "ファイルをアップロード"}
+          {uploading ? "Uploading..." : "Upload file"}
           <input
             type="file"
             className="hidden"
@@ -357,7 +357,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
         <input
           value={filterInput}
           onChange={(event) => setFilterInput(event.target.value)}
-          placeholder="pubkey（64桁 hex）で絞り込み"
+          placeholder="Filter by pubkey (64-character hex)"
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
         />
         <button
@@ -365,7 +365,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
           onClick={applyFilter}
           className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
         >
-          絞り込む
+          Filter
         </button>
         {filter !== "" && (
           <button
@@ -378,7 +378,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
             }}
             className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
           >
-            解除
+            Clear
           </button>
         )}
       </div>
@@ -386,17 +386,17 @@ function Blobs(props: { onError: (error: unknown) => void }) {
       {loading ? (
         <Loading />
       ) : blobs.length === 0 ? (
-        <Empty text="Blob がありません" />
+        <Empty text="No blobs found" />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-800">
           <table className="min-w-full divide-y divide-slate-800 text-sm">
             <thead className="bg-slate-900 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="px-4 py-3">URL</th>
-                <th className="px-4 py-3">種類</th>
-                <th className="px-4 py-3">サイズ</th>
-                <th className="px-4 py-3">アップロード日時</th>
-                <th className="px-4 py-3">所有者</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Size</th>
+                <th className="px-4 py-3">Uploaded</th>
+                <th className="px-4 py-3">Owner</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -418,7 +418,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
                       onClick={() => void copy(blob.url)}
                       className="mt-1 text-xs text-slate-500 hover:text-slate-300"
                     >
-                      コピー
+                      Copy
                     </button>
                   </td>
                   <td className="px-4 py-3 text-slate-300">{blob.type}</td>
@@ -437,7 +437,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
                       onClick={() => void onDelete(blob)}
                       className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50"
                     >
-                      削除
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -448,7 +448,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
       )}
 
       <div className="flex items-center justify-between text-sm text-slate-400">
-        <span>ページ {cursorIndex + 1}</span>
+        <span>Page {cursorIndex + 1}</span>
         <div className="flex gap-2">
           <button
             type="button"
@@ -456,7 +456,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
             onClick={() => setCursorIndex((value) => Math.max(0, value - 1))}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            前へ
+            Previous
           </button>
           <button
             type="button"
@@ -468,7 +468,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
             }}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            次へ
+            Next
           </button>
         </div>
       </div>
@@ -524,7 +524,7 @@ function Uploaders(props: {
       await updateSettings(next);
       setPolicy(next);
       props.onPolicyChange(next);
-      setMessage("アップロードポリシーを更新しました");
+      setMessage("Upload policy updated");
     } catch (error) {
       props.onError(error);
     } finally {
@@ -544,8 +544,8 @@ function Uploaders(props: {
       setInput("");
       setMessage(
         result.created
-          ? `npub を追加しました: ${encodeNpub(result.pubkey)}`
-          : "すでに許可リストに登録されています",
+          ? `Added npub: ${encodeNpub(result.pubkey)}`
+          : "This npub is already on the allowlist",
       );
       reload();
     } catch (error) {
@@ -554,13 +554,13 @@ function Uploaders(props: {
   };
 
   const remove = async (pubkey: string) => {
-    if (!window.confirm(`許可リストから削除しますか？\n${encodeNpub(pubkey)}`)) {
+    if (!window.confirm(`Remove from the allowlist?\n${encodeNpub(pubkey)}`)) {
       return;
     }
     setMessage(null);
     try {
       await removeUploader(pubkey);
-      setMessage("許可リストから削除しました。既存の blob は残ります。");
+      setMessage("Removed from the allowlist. Existing blobs remain.");
       reload();
     } catch (error) {
       props.onError(error);
@@ -570,49 +570,49 @@ function Uploaders(props: {
   const copy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      setMessage("npub をコピーしました");
+      setMessage("npub copied");
     } catch {
-      setMessage("クリップボードにコピーできませんでした");
+      setMessage("Could not copy to clipboard");
     }
   };
 
   return (
     <div className="space-y-5">
       <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="font-semibold">アップロードポリシー</h2>
+        <h2 className="font-semibold">Upload policy</h2>
         <p className="mt-1 text-sm text-slate-400">
-          管理者はポリシーにかかわらず常にアップロードできます。
+          The administrator can always upload, regardless of policy.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <PolicyOption
             checked={policy === "allowlist"}
-            title="許可リストの npub のみ"
-            description="登録された Nostr pubkey と管理者だけがアップロードできます。"
+            title="Allowlisted npubs only"
+            description="Only registered Nostr pubkeys and the administrator can upload."
             disabled={savingPolicy}
             onChange={() => void changePolicy("allowlist")}
           />
           <PolicyOption
             checked={policy === "open"}
-            title="すべての Nostr ユーザー"
-            description="有効な Blossom 認証トークンを持つユーザーなら誰でもアップロードできます。"
+            title="All Nostr users"
+            description="Any user with a valid Blossom authorization token can upload."
             disabled={savingPolicy}
             onChange={() => void changePolicy("open")}
           />
         </div>
         {policy === "allowlist" && uploaders.length === 0 && (
           <p className="mt-4 rounded-lg border border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
-            許可リストが空です。現在アップロードできるのは管理者だけです。
+            The allowlist is empty. Only the administrator can upload right now.
           </p>
         )}
       </section>
 
       <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="font-semibold">許可する npub</h2>
+        <h2 className="font-semibold">Allowed npubs</h2>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="npub1... または64桁 hex"
+            placeholder="npub1... or 64-character hex"
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
           />
           <button
@@ -620,11 +620,11 @@ function Uploaders(props: {
             onClick={() => void add()}
             className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400"
           >
-            追加
+            Add
           </button>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          秘密鍵（nsec）は絶対に入力しないでください。
+          Never enter a private key (nsec).
         </p>
 
         {message !== null && (
@@ -634,25 +634,25 @@ function Uploaders(props: {
         )}
 
         <div className="mt-4 rounded-lg border border-sky-900 bg-sky-950/20 px-4 py-3 text-sm">
-          <span className="text-sky-300">管理者</span>
+          <span className="text-sky-300">Administrator</span>
           <span className="ml-2 font-mono text-xs text-slate-400">
             {shortHex(encodeNpub(props.session.adminPubkey), 14)}
           </span>
-          <span className="ml-2 text-xs text-slate-500">常に許可</span>
+          <span className="ml-2 text-xs text-slate-500">Always allowed</span>
         </div>
 
         {loading ? (
           <Loading />
         ) : uploaders.length === 0 ? (
-          <Empty text="許可リストに登録された npub はありません" />
+          <Empty text="No npubs are on the allowlist" />
         ) : (
           <div className="mt-4 overflow-x-auto rounded-lg border border-slate-800">
             <table className="min-w-full divide-y divide-slate-800 text-sm">
               <thead className="bg-slate-950 text-left text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">npub</th>
-                  <th className="px-4 py-3">追加日時</th>
-                  <th className="px-4 py-3">追加者</th>
+                  <th className="px-4 py-3">Added</th>
+                  <th className="px-4 py-3">Added by</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -683,7 +683,7 @@ function Uploaders(props: {
                           onClick={() => void remove(entry.pubkey)}
                           className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50"
                         >
-                          削除
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -695,7 +695,7 @@ function Uploaders(props: {
         )}
 
         <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
-          <span>ページ {cursorIndex + 1}</span>
+          <span>Page {cursorIndex + 1}</span>
           <div className="flex gap-2">
             <button
               type="button"
@@ -703,7 +703,7 @@ function Uploaders(props: {
               onClick={() => setCursorIndex((value) => Math.max(0, value - 1))}
               className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              前へ
+              Previous
             </button>
             <button
               type="button"
@@ -718,7 +718,7 @@ function Uploaders(props: {
               }}
               className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              次へ
+              Next
             </button>
           </div>
         </div>
@@ -789,14 +789,14 @@ function Reports(props: { onError: (error: unknown) => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="font-semibold">Blob 通報</h2>
+        <h2 className="font-semibold">Blob reports</h2>
         <p className="mt-1 text-sm text-slate-400">
-          NIP-56（kind 1984）で受け付けた通報です。
+          Reports submitted as NIP-56 (kind 1984).
         </p>
       </div>
 
       {reports.length === 0 ? (
-        <Empty text="通報はありません" />
+        <Empty text="No reports" />
       ) : (
         reports.map((report) => {
           const xTags = report.event?.tags.filter((tag) => tag[0] === "x") ?? [];
@@ -814,7 +814,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
                 </span>
               </div>
               <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">
-                {report.event?.content || "（本文なし）"}
+                {report.event?.content || "(No content)"}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {xTags.map((tag, index) => (
@@ -827,11 +827,11 @@ function Reports(props: { onError: (error: unknown) => void }) {
                 ))}
               </div>
               <p className="mt-3 font-mono text-xs text-slate-500">
-                通報者: {shortHex(encodeNpub(report.pubkey), 10)}
+                Reporter: {shortHex(encodeNpub(report.pubkey), 10)}
               </p>
               <details className="mt-3 text-xs text-slate-500">
                 <summary className="cursor-pointer hover:text-slate-300">
-                  元イベント JSON
+                  Raw event JSON
                 </summary>
                 <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-3">
                   {JSON.stringify(report.event, null, 2)}
@@ -843,7 +843,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
       )}
 
       <div className="flex items-center justify-between text-sm text-slate-400">
-        <span>ページ {cursorIndex + 1}</span>
+        <span>Page {cursorIndex + 1}</span>
         <div className="flex gap-2">
           <button
             type="button"
@@ -851,7 +851,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
             onClick={() => setCursorIndex((value) => Math.max(0, value - 1))}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            前へ
+            Previous
           </button>
           <button
             type="button"
@@ -863,7 +863,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
             }}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            次へ
+            Next
           </button>
         </div>
       </div>
@@ -873,7 +873,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
 
 function Loading() {
   return (
-    <div className="py-12 text-center text-sm text-slate-500">読み込み中…</div>
+    <div className="py-12 text-center text-sm text-slate-500">Loading...</div>
   );
 }
 
