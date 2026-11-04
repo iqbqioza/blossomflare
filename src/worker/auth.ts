@@ -213,6 +213,9 @@ export async function verifyAdminRequest(
 
 export function parseNostrPubkey(input: string): string | null {
   const value = input.trim();
+  if (value.length === 0 || value.length > 100) {
+    return null;
+  }
   if (/^[0-9a-f]{64}$/i.test(value)) {
     return value.toLowerCase();
   }

@@ -169,10 +169,8 @@ function isBlockedHostname(hostname: string): boolean {
       ipv6.startsWith("::") ||
       ipv6.startsWith("fc") ||
       ipv6.startsWith("fd") ||
-      ipv6.startsWith("fe8") ||
-      ipv6.startsWith("fe9") ||
-      ipv6.startsWith("fea") ||
-      ipv6.startsWith("feb") ||
+      ipv6.startsWith("fe") ||
+      ipv6.startsWith("ff") ||
       // NAT64 and 6to4 can embed private IPv4 addresses.
       ipv6.startsWith("64:ff9b:") ||
       ipv6.startsWith("2002:") ||
@@ -209,6 +207,11 @@ async function fetchWithRedirects(
     }
 
     if ([301, 302, 303, 307, 308].includes(response.status)) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Redirect bodies are not needed.
+      }
       const location = response.headers.get("location");
       if (!location) {
         throw new HttpError(502, "mirror redirect is missing location");
@@ -228,6 +231,11 @@ async function fetchWithRedirects(
     }
 
     if (!response.ok) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Ignore cleanup failures for an unusable response.
+      }
       throw new HttpError(502, `mirror origin returned ${response.status}`);
     }
 
@@ -239,6 +247,11 @@ async function fetchWithRedirects(
       contentLength >= 0 &&
       contentLength > maxBytes
     ) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // The size error is the meaningful failure.
+      }
       throw new HttpError(413, "mirrored blob is too large");
     }
 
