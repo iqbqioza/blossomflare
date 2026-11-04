@@ -148,6 +148,42 @@ Removing an npub from the allowlist does not delete blobs that user has already 
 - `/list/<pubkey>` is implemented for administrative use, although BUD-12 marks it as unrecommended
 - The admin panel is intended for desktop browsers with a NIP-07 extension
 
+## Intended use and operator responsibility
+
+Blossomflare is intended as a **self-hosted Blossom server** for a personal
+instance or a small, trusted community. It is not designed to be a public,
+free-for-all media host.
+
+- The default upload policy is **allowlist only**. The administrator can always
+  upload; other pubkeys must be added to the allowlist.
+- `All Nostr users` mode is available for operators who consciously accept the
+  cost and abuse risk. It is not a demo toggle, but it is also not the
+  recommended default for public deployments.
+- The operator is responsible for the cost of storage and requests on their
+  Cloudflare account and for the content uploaded to the instance.
+- Blossomflare does not implement BUD-07 (payments), so there is no
+  cost or accountability pass-through to uploaders.
+- Reports (BUD-09) are a moderation aid with 30-day retention. They do not
+  remove content automatically; the administrator reviews and deletes blobs
+  manually.
+- Recommended operator policy: keep allowlist mode, publish an abuse contact
+  and takedown process, monitor Cloudflare usage and billing, and disable
+  `/mirror` if it is not needed.
+
+## Scaling and cost
+
+Storage itself scales well on R2 ($0.015/GB-month with free egress), but the
+tighter constraints are Worker invocations per blob GET, per-blob Durable
+Object serialization for writes, the 25 MiB hard cap, and the absence of
+caching/quota logic. Practical options:
+
+- Use the **Workers Paid** plan for public or high-traffic instances.
+- Put a cache in front of blob GETs (Cache API or an R2 custom domain with
+  caching).
+- Keep allowlist mode and curate uploaders to control cost and abuse.
+- The free tier is suitable for personal use, evaluation, and light community
+  traffic.
+
 ## Manual deployment
 
 To deploy without the Deploy button:
