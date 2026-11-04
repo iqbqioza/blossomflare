@@ -23,6 +23,7 @@ export default defineConfig({
           TEST_MIGRATIONS: migrations,
           MAX_UPLOAD_BYTES: "1048576",
           ENABLE_MIRROR: "true",
+          TEST_COORDINATOR_DELAY_MS: "10",
         },
       },
     }),

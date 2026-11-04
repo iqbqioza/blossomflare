@@ -42,9 +42,11 @@ describe("admin authorization", () => {
     const body = (await response.json()) as {
       adminPubkey: string;
       uploadPolicy: string;
+      maxUploadBytes: number;
     };
     expect(body.adminPubkey).toBe(adminPubkey());
     expect(body.uploadPolicy).toBe("allowlist");
+    expect(body.maxUploadBytes).toBe(1024 * 1024);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
   });
 
@@ -91,6 +93,21 @@ describe("admin authorization", () => {
       body: JSON.stringify({ uploadPolicy: "open" }),
     });
     expect(response.status).toBe(401);
+  });
+
+  it("rejects a replayed NIP-98 token", async () => {
+    const url = `${ADMIN_URL}/api/admin/settings`;
+    const authorization = await nip98Auth(adminSecret(), "GET", url);
+
+    const first = await SELF.fetch(url, {
+      headers: { Authorization: authorization },
+    });
+    expect(first.status).toBe(200);
+
+    const replay = await SELF.fetch(url, {
+      headers: { Authorization: authorization },
+    });
+    expect(replay.status).toBe(401);
   });
 
   it("accepts standard base64 NIP-98 tokens", async () => {
@@ -396,6 +413,37 @@ describe("admin data endpoints", () => {
         created_at: now,
         tags: [["x", uploaded.sha256, "malware"]],
         content: "One too many",
+      },
+      user.secret,
+    );
+    const posted = await SELF.fetch(`${ADMIN_URL}/report`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    expect(posted.status).toBe(429);
+  });
+
+  it("enforces the global report rate limit", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
+    const now = Math.floor(Date.now() / 1000);
+    const windowStart = Math.floor(now / 3600);
+
+    await testEnv.DB.prepare(
+      `INSERT INTO report_rate_limits (pubkey, window_start, count)
+       VALUES ('*', ?, ?)`,
+    )
+      .bind(windowStart, 100)
+      .run();
+
+    const report = finalizeEvent(
+      {
+        kind: 1984,
+        created_at: now,
+        tags: [["x", uploaded.sha256, "malware"]],
+        content: "Global limit",
       },
       user.secret,
     );
