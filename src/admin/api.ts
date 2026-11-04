@@ -10,6 +10,7 @@ export type UploadPolicy = "open" | "allowlist";
 export interface AdminSettings {
   adminPubkey: string;
   uploadPolicy: UploadPolicy;
+  maxUploadBytes: number;
 }
 
 export interface UploaderEntry {

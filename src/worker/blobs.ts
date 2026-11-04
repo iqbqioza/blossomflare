@@ -318,6 +318,9 @@ export async function handleDelete(
   if (result.conflict) {
     return errorResponse(409, "blob changed during deletion");
   }
+  if (!result.deleted) {
+    return errorResponse(503, "could not delete blob; please retry");
+  }
   return new Response(null, { status: 204 });
 }
 

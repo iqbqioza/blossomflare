@@ -283,6 +283,32 @@ describe("blob deletion", () => {
     expect(deleted.status).toBe(204);
   });
 
+  it("keeps D1 and R2 consistent during concurrent delete and upload", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+    const deleteToken = blossomAuth(user.secret, {
+      action: "delete",
+      hash: sha256,
+    });
+
+    await Promise.all([
+      SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+        method: "DELETE",
+        headers: { Authorization: deleteToken },
+      }),
+      uploadAs(user.secret, pngBytes),
+    ]);
+
+    const meta = await getBlobMeta(testEnv, sha256);
+    const fetched = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    if (meta) {
+      expect(fetched.status).toBe(200);
+    } else {
+      expect(fetched.status).toBe(404);
+    }
+  });
+
   it("serializes concurrent deletes of the same blob", async () => {
     const user = newUser();
     await allowUploader(user.pubkey);

@@ -334,28 +334,59 @@ export async function getStats(env: Env): Promise<Stats> {
   };
 }
 
-export async function consumeReportQuota(
+const GLOBAL_REPORT_KEY = "*";
+const REPORT_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+
+async function incrementRateLimit(
   env: Env,
-  pubkey: string,
-  maxPerHour: number,
-): Promise<boolean> {
-  const windowStart = Math.floor(nowSeconds() / 3600);
+  key: string,
+  windowStart: number,
+): Promise<number> {
   const results = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO report_rate_limits (pubkey, window_start, count)
        VALUES (?, ?, 1)
        ON CONFLICT(pubkey, window_start) DO UPDATE SET count = count + 1`,
-    ).bind(pubkey, windowStart),
+    ).bind(key, windowStart),
     env.DB.prepare(
       `SELECT count FROM report_rate_limits
        WHERE pubkey = ? AND window_start = ?`,
-    ).bind(pubkey, windowStart),
+    ).bind(key, windowStart),
     env.DB.prepare(
       "DELETE FROM report_rate_limits WHERE window_start < ?",
     ).bind(windowStart - 24),
   ]);
   const row = results[1]?.results[0] as { count?: number } | undefined;
-  return (row?.count ?? maxPerHour + 1) <= maxPerHour;
+  return row?.count ?? Number.MAX_SAFE_INTEGER;
+}
+
+export async function consumeReportQuota(
+  env: Env,
+  pubkey: string,
+  maxPerHour: number,
+  globalMaxPerHour: number,
+): Promise<boolean> {
+  const now = nowSeconds();
+  const windowStart = Math.floor(now / 3600);
+
+  const userCount = await incrementRateLimit(env, pubkey, windowStart);
+  if (userCount > maxPerHour) {
+    return false;
+  }
+
+  const globalCount = await incrementRateLimit(
+    env,
+    GLOBAL_REPORT_KEY,
+    windowStart,
+  );
+  if (globalCount > globalMaxPerHour) {
+    return false;
+  }
+
+  await env.DB.prepare("DELETE FROM reports WHERE received_at < ?")
+    .bind(now - REPORT_RETENTION_SECONDS)
+    .run();
+  return true;
 }
 
 export async function insertReport(

@@ -168,6 +168,8 @@ describe("mirror", () => {
     "https://[::7f00:1]/image.png",
     "https://[64:ff9b::7f00:1]/image.png",
     "https://[2002:7f00:1::]/image.png",
+    "https://[fec0::1]/image.png",
+    "https://[ff02::1]/image.png",
     "https://169.254.169.254/latest/meta-data",
     "https://metadata.google.internal./latest/meta-data",
     "https://user:pass@example.com/image.png",

@@ -129,7 +129,12 @@ export default function App() {
         )}
 
         {tab === "dashboard" && <Dashboard onError={handleError} />}
-        {tab === "blobs" && <Blobs onError={handleError} />}
+        {tab === "blobs" && (
+          <Blobs
+            maxUploadBytes={session.maxUploadBytes}
+            onError={handleError}
+          />
+        )}
         {tab === "uploaders" && (
           <Uploaders
             session={session}
@@ -241,7 +246,10 @@ function StatCard(props: { label: string; value: string }) {
   );
 }
 
-function Blobs(props: { onError: (error: unknown) => void }) {
+function Blobs(props: {
+  maxUploadBytes: number;
+  onError: (error: unknown) => void;
+}) {
   const [blobs, setBlobs] = useState<BlobRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [cursors, setCursors] = useState<Array<string | null>>([null]);
@@ -251,6 +259,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
   const [filter, setFilter] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [deletingSha, setDeletingSha] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const cursor = cursors[cursorIndex] ?? null;
@@ -314,7 +323,14 @@ function Blobs(props: { onError: (error: unknown) => void }) {
   };
 
   const onUpload = async (file: File | undefined) => {
-    if (!file) return;
+    if (!file || uploading) return;
+    if (file.size > props.maxUploadBytes) {
+      setMessage(
+        `File is too large (maximum ${formatBytes(props.maxUploadBytes)})`,
+      );
+      return;
+    }
+
     setUploading(true);
     setMessage(null);
     try {
@@ -322,6 +338,13 @@ function Blobs(props: { onError: (error: unknown) => void }) {
       setMessage(`Uploaded: ${descriptor.url}`);
       reload();
     } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        props.onError(error);
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Upload failed");
     } finally {
       setUploading(false);
@@ -329,14 +352,26 @@ function Blobs(props: { onError: (error: unknown) => void }) {
   };
 
   const onDelete = async (blob: BlobRecord) => {
+    if (deletingSha !== null) return;
     if (!window.confirm(`Delete this blob?\n${blob.sha256}`)) return;
+
+    setDeletingSha(blob.sha256);
     setMessage(null);
     try {
       await deleteBlob(blob.sha256);
       setMessage("Blob deleted");
       reload();
     } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        props.onError(error);
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setDeletingSha(null);
     }
   };
 
@@ -383,6 +418,7 @@ function Blobs(props: { onError: (error: unknown) => void }) {
           value={filterInput}
           onChange={(event) => setFilterInput(event.target.value)}
           placeholder="Filter by pubkey (64-character hex)"
+          maxLength={64}
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
         />
         <button
@@ -459,10 +495,11 @@ function Blobs(props: { onError: (error: unknown) => void }) {
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"
+                      disabled={deletingSha !== null}
                       onClick={() => void onDelete(blob)}
-                      className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50"
+                      className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Delete
+                      {deletingSha === blob.sha256 ? "Deleting…" : "Delete"}
                     </button>
                   </td>
                 </tr>
@@ -511,6 +548,7 @@ function Uploaders(props: {
   const [input, setInput] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [savingPolicy, setSavingPolicy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const cursor = cursors[cursorIndex] ?? null;
@@ -579,11 +617,14 @@ function Uploaders(props: {
   };
 
   const add = async () => {
+    if (saving) return;
     const parsed = parsePubkeyInput(input);
     if ("error" in parsed) {
       setMessage(parsed.error);
       return;
     }
+
+    setSaving(true);
     setMessage(null);
     try {
       const result = await addUploader(parsed.hex);
@@ -596,13 +637,18 @@ function Uploaders(props: {
       reload();
     } catch (error) {
       props.onError(error);
+    } finally {
+      setSaving(false);
     }
   };
 
   const remove = async (pubkey: string) => {
+    if (saving) return;
     if (!window.confirm(`Remove from the allowlist?\n${encodeNpub(pubkey)}`)) {
       return;
     }
+
+    setSaving(true);
     setMessage(null);
     try {
       await removeUploader(pubkey);
@@ -610,6 +656,8 @@ function Uploaders(props: {
       reload();
     } catch (error) {
       props.onError(error);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -659,12 +707,14 @@ function Uploaders(props: {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="npub1... or 64-character hex"
+            maxLength={100}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
           />
           <button
             type="button"
+            disabled={saving}
             onClick={() => void add()}
-            className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400"
+            className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Add
           </button>
@@ -726,8 +776,9 @@ function Uploaders(props: {
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
+                          disabled={saving}
                           onClick={() => void remove(entry.pubkey)}
-                          className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50"
+                          className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Delete
                         </button>

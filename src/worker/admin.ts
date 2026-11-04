@@ -1,10 +1,12 @@
 import {
   getAdminPubkey,
+  getTagValues,
   parseNostrPubkey,
   verifyAdminRequest,
 } from "./auth";
 import {
   addUploader,
+  consumeAuthEvent,
   getStats,
   getUploadPolicy,
   listBlobs,
@@ -15,6 +17,7 @@ import {
   removeUploader,
   setUploadPolicy,
 } from "./db";
+import { getMaxUploadBytes } from "./blobs";
 import { toDescriptor } from "./blobs";
 import {
   errorResponse,
@@ -37,11 +40,21 @@ export async function handleAdmin(
   }
 
   const body = await readBodyWithLimit(request, MAX_ADMIN_BODY_BYTES);
-  await verifyAdminRequest(
+  const adminEvent = await verifyAdminRequest(
     request,
     adminPubkey,
     body.byteLength > 0 ? body : undefined,
   );
+
+  const expirations = getTagValues(adminEvent, "expiration")
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value));
+  const expires = expirations.length > 0
+    ? Math.max(...expirations)
+    : adminEvent.created_at + 60;
+  if (!(await consumeAuthEvent(env, adminEvent.id, expires))) {
+    return errorResponse(401, "admin authorization token already used");
+  }
 
   const url = new URL(request.url);
   const path = url.pathname;
@@ -51,6 +64,7 @@ export async function handleAdmin(
       return jsonResponse({
         adminPubkey,
         uploadPolicy: await getUploadPolicy(env),
+        maxUploadBytes: getMaxUploadBytes(env),
       });
     }
     if (request.method === "PUT") {

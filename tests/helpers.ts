@@ -70,6 +70,7 @@ export function blossomAuth(
   const tags: string[][] = [
     ["t", options.action ?? "upload"],
     ["expiration", String(now + (options.expirationOffset ?? 300))],
+    ["nonce", crypto.randomUUID()],
   ];
   if (options.hash !== undefined) {
     tags.push(["x", options.hash]);
@@ -104,6 +105,7 @@ export async function nip98Auth(
   const tags: string[][] = [
     ["u", url],
     ["method", method.toUpperCase()],
+    ["nonce", crypto.randomUUID()],
   ];
   if (options.includeExpiration !== false) {
     tags.push(["expiration", String(now + 60)]);

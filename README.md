@@ -141,7 +141,7 @@ Removing an npub from the allowlist does not delete blobs that user has already 
 - There is no per-user storage quota
 - The maximum upload size is capped at 25 MiB to stay within Worker memory limits
 - BUD-11 authorization tokens have a maximum lifetime of one hour; delete tokens are single-use
-- Reports are limited to 20 per pubkey per hour and must reference existing blobs
+- Reports must reference existing blobs, are limited to 20 per pubkey per hour and 100 globally per hour, and are retained for 30 days
 - BUD-12 cursors that point to a deleted blob remain usable for seven days
 - Preview deployments intentionally have no production D1/R2/DO bindings; configure separate preview resources to use the API
 - `/list/<pubkey>` is implemented for administrative use, although BUD-12 marks it as unrecommended

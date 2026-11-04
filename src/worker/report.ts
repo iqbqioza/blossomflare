@@ -11,9 +11,10 @@ import {
 import { isSha256 } from "./mime";
 import type { Env } from "./types";
 
-const MAX_REPORT_BYTES = 64 * 1024;
+const MAX_REPORT_BYTES = 16 * 1024;
 const MAX_REPORT_HASHES = 20;
 const MAX_REPORTS_PER_HOUR = 20;
+const MAX_REPORTS_PER_HOUR_GLOBAL = 100;
 
 export async function handleReport(
   request: Request,
@@ -72,8 +73,15 @@ export async function handleReport(
     return errorResponse(400, "report must reference existing blobs");
   }
 
-  if (!(await consumeReportQuota(env, event.pubkey, MAX_REPORTS_PER_HOUR))) {
-    return errorResponse(429, "too many reports from this pubkey");
+  if (
+    !(await consumeReportQuota(
+      env,
+      event.pubkey,
+      MAX_REPORTS_PER_HOUR,
+      MAX_REPORTS_PER_HOUR_GLOBAL,
+    ))
+  ) {
+    return errorResponse(429, "report rate limit exceeded");
   }
 
   await insertReport(

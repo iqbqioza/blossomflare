@@ -8,13 +8,46 @@ import type {
 } from "./types";
 
 export class BlobCoordinator extends DurableObject<Env> {
-  async store(
+  private tail: Promise<unknown> = Promise.resolve();
+
+  // Durable Objects are single-threaded, but awaiting external R2/D1 I/O
+  // allows another event to interleave. Queue the whole critical section.
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(operation, operation);
+    this.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  store(
+    data: ArrayBuffer,
+    sha256: string,
+    type: string,
+    pubkey: string,
+  ): Promise<StoreResult> {
+    return this.serialize(() =>
+      this.storeInternal(data, sha256, type, pubkey)
+    );
+  }
+
+  private async maybeTestDelay(): Promise<void> {
+    const raw = this.env.TEST_COORDINATOR_DELAY_MS;
+    const delay = typeof raw === "string" ? Number(raw) : 0;
+    if (Number.isFinite(delay) && delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  private async storeInternal(
     data: ArrayBuffer,
     sha256: string,
     type: string,
     pubkey: string,
   ): Promise<StoreResult> {
     const existing = await getBlobMeta(this.env, sha256);
+    await this.maybeTestDelay();
 
     if (existing) {
       if (await this.env.BLOBS.head(sha256)) {
@@ -68,8 +101,16 @@ export class BlobCoordinator extends DurableObject<Env> {
     }
   }
 
-  async remove(sha256: string, uploadId: string): Promise<DeleteResult> {
+  remove(sha256: string, uploadId: string): Promise<DeleteResult> {
+    return this.serialize(() => this.removeInternal(sha256, uploadId));
+  }
+
+  private async removeInternal(
+    sha256: string,
+    uploadId: string,
+  ): Promise<DeleteResult> {
     const meta = await getBlobMeta(this.env, sha256);
+    await this.maybeTestDelay();
     if (!meta || meta.uploadId !== uploadId) {
       return { deleted: false, conflict: true };
     }
@@ -83,10 +124,20 @@ export class BlobCoordinator extends DurableObject<Env> {
       await this.env.BLOBS.delete(sha256);
     } catch (error) {
       console.error(
-        "Failed to delete R2 object after metadata deletion",
+        "Failed to delete R2 object; rolling back metadata",
         sha256,
         error instanceof Error ? error.message : "unknown error",
       );
+      try {
+        await insertBlob(this.env, meta);
+      } catch (rollbackError) {
+        console.error(
+          "Failed to roll back blob metadata",
+          sha256,
+          rollbackError instanceof Error ? rollbackError.message : "unknown error",
+        );
+      }
+      return { deleted: false, conflict: false };
     }
 
     return { deleted: true, conflict: false };
