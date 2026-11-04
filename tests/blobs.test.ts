@@ -193,6 +193,25 @@ describe("blob upload", () => {
     expect(second.response.status).toBe(200);
   });
 
+  it("serializes concurrent uploads of the same blob", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => uploadAs(user.secret, pngBytes)),
+    );
+    const statuses = results.map((result) => result.response.status);
+    expect(statuses.filter((status) => status === 201)).toHaveLength(1);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(4);
+
+    const row = await testEnv.DB.prepare(
+      "SELECT COUNT(*) AS count FROM blobs WHERE sha256 = ?",
+    )
+      .bind(await sha256Hex(pngBytes))
+      .first<{ count: number }>();
+    expect(row?.count).toBe(1);
+  });
+
   it("returns 409 when X-SHA-256 does not match the body", async () => {
     const user = newUser();
     await allowUploader(user.pubkey);
@@ -262,6 +281,41 @@ describe("blob deletion", () => {
 
     const deleted = await deleteAs(adminSecret(), sha256);
     expect(deleted.status).toBe(204);
+  });
+
+  it("serializes concurrent deletes of the same blob", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+
+    const tokens = [
+      blossomAuth(user.secret, {
+        action: "delete",
+        hash: sha256,
+        createdAtOffset: -1,
+      }),
+      blossomAuth(user.secret, {
+        action: "delete",
+        hash: sha256,
+      }),
+    ];
+
+    const responses = await Promise.all(
+      tokens.map((authorization) =>
+        SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+          method: "DELETE",
+          headers: { Authorization: authorization },
+        })
+      ),
+    );
+    const statuses = responses.map((response) => response.status);
+    expect(statuses.filter((status) => status === 204)).toHaveLength(1);
+    expect(
+      statuses.filter((status) => status === 404 || status === 409),
+    ).toHaveLength(1);
+
+    const fetched = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    expect(fetched.status).toBe(404);
   });
 
   it("returns 404 when deleting a missing blob", async () => {
