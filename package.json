@@ -1,0 +1,62 @@
+{
+  "name": "blossomflare",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "cloudflare": {
+    "label": "Blossomflare",
+    "products": [
+      "Workers",
+      "D1",
+      "R2"
+    ],
+    "categories": [
+      "storage"
+    ],
+    "bindings": {
+      "ADMIN_NPUB": {
+        "description": "管理画面にログインできる管理者の npub（または64桁 hex）。"
+      },
+      "MAX_UPLOAD_BYTES": {
+        "description": "1ファイルあたりの最大アップロードサイズ（バイト）。既定は 10 MiB です。"
+      },
+      "ENABLE_MIRROR": {
+        "description": "BUD-04 の /mirror を有効にする場合は true にします。"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "deploy": "pnpm db:migrate:remote && wrangler deploy",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "dev": "pnpm build && wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.25.5",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.5.0",
+    "@cloudflare/workers-types": "^5.20261103.1",
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "tailwindcss": "^4.3.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.156.2"
+  }
+}
