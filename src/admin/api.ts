@@ -11,6 +11,8 @@ export interface AdminSettings {
   adminPubkey: string;
   uploadPolicy: UploadPolicy;
   maxUploadBytes: number;
+  csrfToken?: string;
+  expiresAt?: number;
 }
 
 export interface UploaderEntry {
@@ -63,6 +65,16 @@ export class ApiError extends Error {
   }
 }
 
+let csrfToken: string | null = null;
+
+function isCsrfToken(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+export function clearSessionToken(): void {
+  csrfToken = null;
+}
+
 async function adminRequest<T>(
   method: string,
   path: string,
@@ -70,19 +82,30 @@ async function adminRequest<T>(
 ): Promise<T> {
   const url = new URL(path, location.origin).toString();
   const text = body === undefined ? null : JSON.stringify(body);
-  const authorization = await nip98Header(method, url, text);
+  const headers: Record<string, string> = {};
+
+  if (text !== null) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (csrfToken === null) {
+    headers.Authorization = await nip98Header(method, url, text);
+  } else if (method !== "GET" && method !== "HEAD") {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
 
   const response = await fetch(url, {
     method,
     cache: "no-store",
-    headers: {
-      Authorization: authorization,
-      ...(text === null ? {} : { "Content-Type": "application/json" }),
-    },
+    credentials: "same-origin",
+    headers,
     ...(text === null ? {} : { body: text }),
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      csrfToken = null;
+    }
     throw new ApiError(response.status, await errorMessage(response));
   }
   if (response.status === 204) {
@@ -91,8 +114,84 @@ async function adminRequest<T>(
   return (await response.json()) as T;
 }
 
-export async function getSettings(): Promise<AdminSettings> {
-  return adminRequest<AdminSettings>("GET", "/api/admin/settings");
+export async function restoreSession(): Promise<AdminSettings | null> {
+  const response = await fetch("/api/admin/settings", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+
+  if (response.status === 401) {
+    csrfToken = null;
+    return null;
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorMessage(response));
+  }
+
+  const settings = (await response.json()) as AdminSettings;
+  if (!isCsrfToken(settings.csrfToken)) {
+    csrfToken = null;
+    return null;
+  }
+
+  csrfToken = settings.csrfToken;
+  return settings;
+}
+
+export async function createSession(): Promise<AdminSettings> {
+  const url = new URL("/api/admin/session", location.origin).toString();
+  const authorization = await nip98Header("POST", url, null);
+  const response = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { Authorization: authorization },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorMessage(response));
+  }
+
+  const settings = (await response.json()) as AdminSettings;
+  if (!isCsrfToken(settings.csrfToken)) {
+    throw new Error("The server did not return a CSRF token");
+  }
+
+  csrfToken = settings.csrfToken;
+  return settings;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    let token = csrfToken;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await fetch("/api/admin/session", {
+        method: "DELETE",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: token === null ? {} : { "X-CSRF-Token": token },
+      });
+
+      if (response.ok || response.status === 401) {
+        return;
+      }
+
+      if (response.status === 403 && attempt === 0) {
+        const settings = await restoreSession();
+        if (settings === null || !isCsrfToken(settings.csrfToken)) {
+          return;
+        }
+        token = settings.csrfToken;
+        continue;
+      }
+
+      throw new ApiError(response.status, await errorMessage(response));
+    }
+  } finally {
+    csrfToken = null;
+  }
 }
 
 export async function updateSettings(

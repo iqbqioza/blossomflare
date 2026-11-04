@@ -1,4 +1,5 @@
 import {
+  AuthError,
   getAdminPubkey,
   getTagValues,
   parseNostrPubkey,
@@ -26,9 +27,21 @@ import {
   readBodyWithLimit,
 } from "./http";
 import { isPubkey, isSha256 } from "./mime";
+import {
+  adminSessionCookie,
+  clearAdminSessionCookie,
+  createAdminSession,
+  csrfMatches,
+  deleteAdminSession,
+  getAdminSession,
+} from "./session";
 import type { Env, UploadPolicy } from "./types";
 
 const MAX_ADMIN_BODY_BYTES = 64 * 1024;
+
+interface AdminAuth {
+  csrfToken: string | null;
+}
 
 export async function handleAdmin(
   request: Request,
@@ -40,24 +53,14 @@ export async function handleAdmin(
   }
 
   const body = await readBodyWithLimit(request, MAX_ADMIN_BODY_BYTES);
-  const adminEvent = await verifyAdminRequest(
-    request,
-    adminPubkey,
-    body.byteLength > 0 ? body : undefined,
-  );
-
-  const expirations = getTagValues(adminEvent, "expiration")
-    .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value));
-  const expires = expirations.length > 0
-    ? Math.max(...expirations)
-    : adminEvent.created_at + 60;
-  if (!(await consumeAuthEvent(env, adminEvent.id, expires))) {
-    return errorResponse(401, "admin authorization token already used");
-  }
-
   const url = new URL(request.url);
   const path = url.pathname;
+
+  if (path === "/api/admin/session") {
+    return handleSession(request, env, adminPubkey, body);
+  }
+
+  const auth = await authenticateAdmin(request, env, adminPubkey, body);
 
   if (path === "/api/admin/settings") {
     if (request.method === "GET") {
@@ -65,6 +68,7 @@ export async function handleAdmin(
         adminPubkey,
         uploadPolicy: await getUploadPolicy(env),
         maxUploadBytes: getMaxUploadBytes(env),
+        ...(auth.csrfToken === null ? {} : { csrfToken: auth.csrfToken }),
       });
     }
     if (request.method === "PUT") {
@@ -159,6 +163,100 @@ export async function handleAdmin(
   }
 
   return errorResponse(404, "admin endpoint not found");
+}
+
+async function handleSession(
+  request: Request,
+  env: Env,
+  adminPubkey: string,
+  body: ArrayBuffer,
+): Promise<Response> {
+  if (request.method === "POST") {
+    await consumeAdminToken(request, env, adminPubkey, body);
+    const session = await createAdminSession(env, adminPubkey);
+    return jsonResponse(
+      {
+        adminPubkey,
+        uploadPolicy: await getUploadPolicy(env),
+        maxUploadBytes: getMaxUploadBytes(env),
+        csrfToken: session.csrfToken,
+        expiresAt: session.expiresAt,
+      },
+      201,
+      { "Set-Cookie": adminSessionCookie(request, session) },
+    );
+  }
+
+  if (request.method === "DELETE") {
+    const session = await getAdminSession(env, request, adminPubkey);
+    if (session !== null) {
+      const csrfToken = request.headers.get("x-csrf-token");
+      if (csrfToken === null || !csrfMatches(csrfToken, session.csrfToken)) {
+        return errorResponse(403, "invalid CSRF token");
+      }
+      await deleteAdminSession(env, request);
+    }
+
+    return new Response(null, {
+      status: 204,
+      headers: { "Set-Cookie": clearAdminSessionCookie(request) },
+    });
+  }
+
+  return methodNotAllowed("POST, DELETE");
+}
+
+async function authenticateAdmin(
+  request: Request,
+  env: Env,
+  adminPubkey: string,
+  body: ArrayBuffer,
+): Promise<AdminAuth> {
+  if (request.headers.get("authorization") !== null) {
+    await consumeAdminToken(request, env, adminPubkey, body);
+    return { csrfToken: null };
+  }
+
+  const session = await getAdminSession(env, request, adminPubkey);
+  if (session === null) {
+    throw new AuthError(401, "admin session required");
+  }
+
+  if (
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    request.method !== "OPTIONS"
+  ) {
+    const csrfToken = request.headers.get("x-csrf-token");
+    if (csrfToken === null || !csrfMatches(csrfToken, session.csrfToken)) {
+      throw new AuthError(403, "invalid CSRF token");
+    }
+  }
+
+  return { csrfToken: session.csrfToken };
+}
+
+async function consumeAdminToken(
+  request: Request,
+  env: Env,
+  adminPubkey: string,
+  body: ArrayBuffer,
+): Promise<void> {
+  const adminEvent = await verifyAdminRequest(
+    request,
+    adminPubkey,
+    body.byteLength > 0 ? body : undefined,
+  );
+
+  const expirations = getTagValues(adminEvent, "expiration")
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value));
+  const expires = expirations.length > 0
+    ? Math.max(...expirations)
+    : adminEvent.created_at + 60;
+  if (!(await consumeAuthEvent(env, adminEvent.id, expires))) {
+    throw new AuthError(401, "admin authorization token already used");
+  }
 }
 
 async function updateSettings(

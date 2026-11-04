@@ -26,7 +26,7 @@ import {
 } from "./mime";
 import type { BlobDescriptor, BlobMeta, Env } from "./types";
 
-const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ABSOLUTE_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export function getMaxUploadBytes(env: Env): number {

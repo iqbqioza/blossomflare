@@ -148,8 +148,61 @@ export async function adminFetch(
   });
 }
 
+export async function adminLogin(): Promise<{
+  cookie: string;
+  csrfToken: string;
+}> {
+  const url = `${ADMIN_URL}/api/admin/session`;
+  const authorization = await nip98Auth(adminSecret(), "POST", url);
+  const response = await SELF.fetch(url, {
+    method: "POST",
+    headers: { Authorization: authorization },
+  });
+
+  if (response.status !== 201) {
+    throw new Error(`admin login failed with status ${response.status}`);
+  }
+
+  const body = (await response.json()) as { csrfToken?: unknown };
+  const setCookie = response.headers.get("set-cookie");
+  const cookie = setCookie?.split(";")[0];
+  if (typeof body.csrfToken !== "string" || !cookie) {
+    throw new Error("admin login returned an invalid response");
+  }
+
+  return { cookie, csrfToken: body.csrfToken };
+}
+
+export async function sessionFetch(
+  cookie: string,
+  path: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    csrfToken?: string;
+  } = {},
+): Promise<Response> {
+  const method = options.method ?? "GET";
+  const text = options.body === undefined
+    ? undefined
+    : JSON.stringify(options.body);
+
+  return SELF.fetch(`${ADMIN_URL}${path}`, {
+    method,
+    headers: {
+      Cookie: cookie,
+      ...(text === undefined ? {} : { "Content-Type": "application/json" }),
+      ...(options.csrfToken === undefined
+        ? {}
+        : { "X-CSRF-Token": options.csrfToken }),
+    },
+    ...(text === undefined ? {} : { body: text }),
+  });
+}
+
 export async function resetDb(): Promise<void> {
   await testEnv.DB.batch([
+    testEnv.DB.prepare("DELETE FROM admin_sessions"),
     testEnv.DB.prepare("DELETE FROM blobs"),
     testEnv.DB.prepare("DELETE FROM blob_tombstones"),
     testEnv.DB.prepare("DELETE FROM used_auth_events"),

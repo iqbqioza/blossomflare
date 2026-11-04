@@ -11,8 +11,8 @@ body {
 
 body {
   margin: 0;
-  background: #020617;
-  color: #f8fafc;
+  background: #000000;
+  color: #ffffff;
   font-family:
     ui-sans-serif,
     system-ui,
@@ -25,4 +25,9 @@ body {
 button,
 input {
   font: inherit;
+}
+
+::selection {
+  background: #ffffff;
+  color: #000000;
 }
