@@ -9,6 +9,7 @@ import {
   adminSecret,
   ADMIN_URL,
   allowUploader,
+  authHeader,
   newUser,
   nip98Auth,
   pngBytes,
@@ -141,6 +142,51 @@ describe("admin authorization", () => {
       headers: { Authorization: authorization },
     });
     expect(response.status).toBe(200);
+  });
+
+  it("bounds the stored expiration of an admin token", async () => {
+    const url = `${ADMIN_URL}/api/admin/settings`;
+    const authorization = await nip98Auth(
+      adminSecret(),
+      "GET",
+      url,
+      undefined,
+      { expirationOffset: 365 * 24 * 60 * 60 },
+    );
+
+    const response = await SELF.fetch(url, {
+      headers: { Authorization: authorization },
+    });
+    expect(response.status).toBe(200);
+
+    const after = Math.floor(Date.now() / 1000);
+    const row = await testEnv.DB.prepare(
+      "SELECT expires FROM used_auth_events",
+    ).first<{ expires: number }>();
+    expect(row).not.toBeNull();
+    expect(row?.expires).toBeLessThanOrEqual(after + 60);
+  });
+
+  it("rejects an admin token with an unsafe expiration", async () => {
+    const url = `${ADMIN_URL}/api/admin/settings`;
+    const event = finalizeEvent(
+      {
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["u", url],
+          ["method", "GET"],
+          ["expiration", String(Number.MAX_SAFE_INTEGER + 1)],
+        ],
+        content: "",
+      },
+      adminSecret(),
+    );
+
+    const response = await SELF.fetch(url, {
+      headers: { Authorization: authHeader(event) },
+    });
+    expect(response.status).toBe(401);
   });
 
   it("rejects a null settings body with 400", async () => {
@@ -349,6 +395,33 @@ describe("admin data endpoints", () => {
     expect(body.reports).toHaveLength(1);
     expect(body.reports[0]?.id).toBe(report.id);
     expect(body.reports[0]?.event?.content).toBe("This is a test report");
+  });
+
+  it("rejects reports with unsafe timestamps", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
+    const report = finalizeEvent(
+      {
+        kind: 1984,
+        created_at: Number.MAX_SAFE_INTEGER + 1,
+        tags: [["x", uploaded.sha256, "malware"]],
+        content: "Unsafe timestamp",
+      },
+      user.secret,
+    );
+
+    const posted = await SELF.fetch(`${ADMIN_URL}/report`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    expect(posted.status).toBe(400);
+
+    const count = await testEnv.DB.prepare(
+      "SELECT COUNT(*) AS count FROM reports",
+    ).first<{ count: number }>();
+    expect(count?.count).toBe(0);
   });
 
   it("rejects reports for unknown blobs", async () => {

@@ -299,7 +299,7 @@ export async function handleDelete(
 
   const expirations = getTagValues(token, "expiration")
     .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value));
+    .filter((value) => Number.isSafeInteger(value));
   const expires = expirations.length > 0
     ? Math.max(...expirations)
     : Math.floor(Date.now() / 1000) + 60;

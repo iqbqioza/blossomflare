@@ -2,6 +2,7 @@ import {
   AuthError,
   getAdminPubkey,
   getTagValues,
+  NIP98_WINDOW_SECONDS,
   parseNostrPubkey,
   verifyAdminRequest,
 } from "./auth";
@@ -248,12 +249,16 @@ async function consumeAdminToken(
     body.byteLength > 0 ? body : undefined,
   );
 
+  const validUntil = adminEvent.created_at + NIP98_WINDOW_SECONDS;
   const expirations = getTagValues(adminEvent, "expiration")
     .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value));
-  const expires = expirations.length > 0
-    ? Math.max(...expirations)
-    : adminEvent.created_at + 60;
+    .filter((value) => Number.isSafeInteger(value));
+  // NIP-98 timestamps are only accepted within this window, so there is no
+  // need to retain the replay marker for a longer expiration.
+  const expires = Math.min(
+    expirations.length > 0 ? Math.max(...expirations) : validUntil,
+    validUntil,
+  );
   if (!(await consumeAuthEvent(env, adminEvent.id, expires))) {
     throw new AuthError(401, "admin authorization token already used");
   }

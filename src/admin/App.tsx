@@ -127,11 +127,11 @@ export default function App() {
     setLoggingOut(true);
     try {
       await logout();
+      setSession(null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign out");
     } finally {
-      setSession(null);
       setLoggingOut(false);
     }
   };
@@ -608,13 +608,6 @@ function Blobs(props: {
       setMessage(`Uploaded: ${descriptor.url}`);
       reload();
     } catch (error) {
-      if (
-        error instanceof ApiError &&
-        (error.status === 401 || error.status === 403)
-      ) {
-        props.onError(error);
-        return;
-      }
       setMessage(error instanceof Error ? error.message : "Upload failed");
     } finally {
       setUploading(false);
@@ -634,13 +627,6 @@ function Blobs(props: {
       reload();
     } catch (error) {
       setPendingDelete(null);
-      if (
-        error instanceof ApiError &&
-        (error.status === 401 || error.status === 403)
-      ) {
-        props.onError(error);
-        return;
-      }
       setMessage(error instanceof Error ? error.message : "Delete failed");
     } finally {
       setDeletingSha(null);

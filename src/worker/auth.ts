@@ -14,7 +14,7 @@ export class AuthError extends HttpError {
 
 const BLOSSOM_CLOCK_SKEW_SECONDS = 30;
 const MAX_BLOSSOM_TOKEN_LIFETIME_SECONDS = 60 * 60;
-const NIP98_WINDOW_SECONDS = 60;
+export const NIP98_WINDOW_SECONDS = 60;
 const MAX_AUTH_TOKEN_CHARS = 64 * 1024;
 
 export function getTagValues(event: Event, name: string): string[] {
@@ -34,9 +34,9 @@ export function isEventShape(value: unknown): value is Event {
     typeof event.sig === "string" &&
     /^[0-9a-f]{128}$/.test(event.sig) &&
     typeof event.created_at === "number" &&
-    Number.isInteger(event.created_at) &&
+    Number.isSafeInteger(event.created_at) &&
     typeof event.kind === "number" &&
-    Number.isInteger(event.kind) &&
+    Number.isSafeInteger(event.kind) &&
     typeof event.content === "string" &&
     Array.isArray(event.tags) &&
     event.tags.every(
@@ -125,7 +125,7 @@ export async function verifyBlossomAuth(
 
   const expirations = getTagValues(event, "expiration")
     .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value));
+    .filter((value) => Number.isSafeInteger(value));
   if (expirations.length === 0 || !expirations.some((value) => value > now)) {
     throw new AuthError(401, "authorization event is expired");
   }
@@ -183,7 +183,7 @@ export async function verifyAdminRequest(
   if (rawExpirations.length > 0) {
     const expirations = rawExpirations
       .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value));
+      .filter((value) => Number.isSafeInteger(value));
     if (expirations.length === 0 || !expirations.some((value) => value > now)) {
       throw new AuthError(401, "admin authorization is expired");
     }

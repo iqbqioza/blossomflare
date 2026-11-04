@@ -1,7 +1,7 @@
-import { verifyBlossomAuth } from "./auth";
+import { getTagValues, verifyBlossomAuth } from "./auth";
 import { toDescriptor, getMaxUploadBytes } from "./blobs";
 import { getBlobCoordinator } from "./coordinator-client";
-import { canUpload } from "./db";
+import { canUpload, consumeAuthEvent } from "./db";
 import { sha256Hex } from "./crypto";
 import {
   errorResponse,
@@ -72,6 +72,19 @@ export async function handleMirror(
     (payload as MirrorRequest).url as string,
     requestUrl.hostname,
   );
+
+  // Consume before the outbound fetch so the token cannot be replayed to
+  // amplify requests against the mirror origin.
+  const expirations = getTagValues(token, "expiration")
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value));
+  const expires = expirations.length > 0
+    ? Math.max(...expirations)
+    : token.created_at + 60;
+  if (!(await consumeAuthEvent(env, token.id, expires))) {
+    return errorResponse(401, "authorization token already used");
+  }
+
   const maxBytes = getMaxUploadBytes(env);
 
   const fetched = await fetchWithRedirects(
