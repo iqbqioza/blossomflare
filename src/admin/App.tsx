@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addUploader,
   ApiError,
+  clearSessionToken,
+  createSession,
   deleteBlob,
-  getSettings,
   getStats,
   listBlobs,
   listReports,
   listUploaders,
+  logout,
   removeUploader,
+  restoreSession,
   updateSettings,
   uploadBlob,
   type AdminSettings,
@@ -41,9 +44,35 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    restoreSession()
+      .then((value) => {
+        if (!cancelled) setSession(value);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Could not restore session",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      clearSessionToken();
       setSession(null);
       setError("Could not authenticate as an administrator");
       return;
@@ -55,13 +84,34 @@ export default function App() {
     setError(null);
     setLoggingIn(true);
     try {
-      setSession(await getSettings());
+      setSession(await createSession());
     } catch (err) {
       handleError(err);
     } finally {
       setLoggingIn(false);
     }
   };
+
+  const signOut = async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign out");
+    } finally {
+      setSession(null);
+      setLoggingOut(false);
+    }
+  };
+
+  if (restoring) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black text-sm text-neutral-500">
+        Restoring session...
+      </div>
+    );
+  }
 
   if (session === null) {
     return (
@@ -115,13 +165,11 @@ export default function App() {
           <div className="border-t border-neutral-800 p-3 md:mt-auto">
             <button
               type="button"
-              className="w-full rounded-md border border-neutral-800 px-3 py-2 text-left text-sm text-neutral-400 transition-colors hover:border-neutral-600 hover:text-white"
-              onClick={() => {
-                setSession(null);
-                setError(null);
-              }}
+              disabled={loggingOut}
+              className="w-full rounded-md border border-neutral-800 px-3 py-2 text-left text-sm text-neutral-400 transition-colors hover:border-neutral-600 hover:text-white disabled:cursor-not-allowed disabled:text-neutral-600"
+              onClick={() => void signOut()}
             >
-              Sign out
+              {loggingOut ? "Signing out..." : "Sign out"}
             </button>
           </div>
         </div>
@@ -188,7 +236,7 @@ function Login(props: {
         </h1>
         <p className="mt-3 text-sm leading-6 text-neutral-400">
           Sign in with your admin npub. Your private key never leaves your browser
-          extension.
+          extension, and this browser stays signed in for seven days.
         </p>
 
         {!available && (

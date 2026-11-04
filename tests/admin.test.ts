@@ -4,6 +4,7 @@ import { finalizeEvent } from "nostr-tools/pure";
 import { npubEncode } from "nostr-tools/nip19";
 import {
   adminFetch,
+  adminLogin,
   adminPubkey,
   adminSecret,
   ADMIN_URL,
@@ -12,9 +13,11 @@ import {
   nip98Auth,
   pngBytes,
   resetDb,
+  sessionFetch,
   testEnv,
   uploadAs,
 } from "./helpers";
+import { sha256Hex } from "../src/worker/crypto";
 
 beforeEach(async () => {
   await resetDb();
@@ -491,5 +494,174 @@ describe("admin data endpoints", () => {
       .bind(user.pubkey)
       .first<{ count: number }>();
     expect(count?.count).toBe(20);
+  });
+});
+
+describe("admin sessions", () => {
+  it("creates a cookie session and restores settings without NIP-98", async () => {
+    const { cookie, csrfToken } = await adminLogin();
+    expect(cookie).toMatch(/^blossomflare_admin=[0-9a-f]{64}$/);
+    expect(csrfToken).toMatch(/^[0-9a-f]{64}$/);
+
+    const response = await sessionFetch(cookie, "/api/admin/settings");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      adminPubkey: string;
+      uploadPolicy: string;
+      maxUploadBytes: number;
+      csrfToken: string;
+    };
+    expect(body.adminPubkey).toBe(adminPubkey());
+    expect(body.uploadPolicy).toBe("allowlist");
+    expect(body.maxUploadBytes).toBe(1024 * 1024);
+    expect(body.csrfToken).toBe(csrfToken);
+  });
+
+  it("sets an HttpOnly, SameSite=Strict, Secure cookie", async () => {
+    const url = `${ADMIN_URL}/api/admin/session`;
+    const authorization = await nip98Auth(adminSecret(), "POST", url);
+    const response = await SELF.fetch(url, {
+      method: "POST",
+      headers: { Authorization: authorization },
+    });
+    expect(response.status).toBe(201);
+
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Strict");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).toContain(`Max-Age=${7 * 24 * 60 * 60}`);
+  });
+
+  it("requires a matching CSRF token for state-changing requests", async () => {
+    const { cookie, csrfToken } = await adminLogin();
+    const body = { uploadPolicy: "open" };
+
+    const missing = await sessionFetch(cookie, "/api/admin/settings", {
+      method: "PUT",
+      body,
+    });
+    expect(missing.status).toBe(403);
+
+    const wrong = await sessionFetch(cookie, "/api/admin/settings", {
+      method: "PUT",
+      body,
+      csrfToken: "00".repeat(32),
+    });
+    expect(wrong.status).toBe(403);
+
+    const accepted = await sessionFetch(cookie, "/api/admin/settings", {
+      method: "PUT",
+      body,
+      csrfToken,
+    });
+    expect(accepted.status).toBe(200);
+
+    const settings = await sessionFetch(cookie, "/api/admin/settings");
+    const settingsBody = (await settings.json()) as { uploadPolicy: string };
+    expect(settingsBody.uploadPolicy).toBe("open");
+  });
+
+  it("rejects a CSRF token from another session", async () => {
+    const first = await adminLogin();
+    const second = await adminLogin();
+
+    const response = await sessionFetch(second.cookie, "/api/admin/settings", {
+      method: "PUT",
+      body: { uploadPolicy: "open" },
+      csrfToken: first.csrfToken,
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("does not require a CSRF token for reads", async () => {
+    const { cookie } = await adminLogin();
+    const response = await sessionFetch(cookie, "/api/admin/stats");
+    expect(response.status).toBe(200);
+  });
+
+  it("deletes the session on logout and clears the cookie", async () => {
+    const { cookie, csrfToken } = await adminLogin();
+    const response = await sessionFetch(cookie, "/api/admin/session", {
+      method: "DELETE",
+      csrfToken,
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+
+    const after = await sessionFetch(cookie, "/api/admin/settings");
+    expect(after.status).toBe(401);
+  });
+
+  it("rejects logout without a CSRF token", async () => {
+    const { cookie } = await adminLogin();
+    const response = await sessionFetch(cookie, "/api/admin/session", {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(403);
+
+    const stillSignedIn = await sessionFetch(cookie, "/api/admin/settings");
+    expect(stillSignedIn.status).toBe(200);
+  });
+
+  it("rejects expired sessions", async () => {
+    const { cookie } = await adminLogin();
+    const token = cookie.slice("blossomflare_admin=".length);
+    const hash = await sha256Hex(new TextEncoder().encode(token));
+
+    await testEnv.DB.prepare(
+      "UPDATE admin_sessions SET expires_at = ? WHERE token_hash = ?",
+    )
+      .bind(Math.floor(Date.now() / 1000) - 1, hash)
+      .run();
+
+    const response = await sessionFetch(cookie, "/api/admin/settings");
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects sessions bound to another admin pubkey", async () => {
+    const { cookie } = await adminLogin();
+    const token = cookie.slice("blossomflare_admin=".length);
+    const hash = await sha256Hex(new TextEncoder().encode(token));
+
+    await testEnv.DB.prepare(
+      "UPDATE admin_sessions SET admin_pubkey = ? WHERE token_hash = ?",
+    )
+      .bind("ab".repeat(32), hash)
+      .run();
+
+    const response = await sessionFetch(cookie, "/api/admin/settings");
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a replayed NIP-98 login token", async () => {
+    const url = `${ADMIN_URL}/api/admin/session`;
+    const authorization = await nip98Auth(adminSecret(), "POST", url);
+
+    const first = await SELF.fetch(url, {
+      method: "POST",
+      headers: { Authorization: authorization },
+    });
+    expect(first.status).toBe(201);
+
+    const replay = await SELF.fetch(url, {
+      method: "POST",
+      headers: { Authorization: authorization },
+    });
+    expect(replay.status).toBe(401);
+  });
+
+  it("does not create a session for a non-admin signature", async () => {
+    const user = newUser();
+    const url = `${ADMIN_URL}/api/admin/session`;
+    const authorization = await nip98Auth(user.secret, "POST", url);
+    const response = await SELF.fetch(url, {
+      method: "POST",
+      headers: { Authorization: authorization },
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 });

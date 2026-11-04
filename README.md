@@ -22,7 +22,7 @@ During deployment you will be asked for the **admin npub** (or a 64-character he
 ### After deployment
 
 1. Open the deployed URL (`https://<worker-name>.<subdomain>.workers.dev/`)
-2. Sign in with a NIP-07 browser extension such as Alby
+2. Sign in with a NIP-07 browser extension such as Alby. The session lasts seven days; use **Sign out** to revoke it.
 3. Open the **Upload permissions** tab and review the policy
    - The initial policy is **allowlist only**
    - The administrator can always upload, regardless of policy
@@ -42,9 +42,9 @@ Workers (Static Assets + API)
 └─ /                 Admin SPA
 ```
 
-- **D1**: blob metadata, reports, upload allowlist, and settings
+- **D1**: blob metadata, reports, upload allowlist, admin sessions, and settings
 - **R2**: blob contents, keyed by SHA-256
-- **Admin panel**: React + TailwindCSS. Requests are signed with NIP-07; private keys never leave the browser extension.
+- **Admin panel**: React + TailwindCSS. Sign-in uses NIP-07; after the signed login, the panel keeps a seven-day HttpOnly session cookie and uses a CSRF token for state-changing requests. Private keys never leave the browser extension.
 
 ## Local development
 
@@ -128,8 +128,9 @@ Removing an npub from the allowlist does not delete blobs that user has already 
 ## Security
 
 - Upload, delete, and mirror requests are authenticated with BUD-11 kind 24242 tokens
-- Every admin API request is verified with NIP-98 (kind 27235)
-- The admin panel uses no cookies; it relies entirely on signed requests
+- Admin API requests are authenticated with NIP-98 (kind 27235) or with an HttpOnly session created by a NIP-98 login
+- NIP-98 admin tokens are single-use, and the session cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on HTTPS
+- State-changing session requests require an `X-CSRF-Token` header; session tokens are stored hashed in D1 and expire after seven days
 - Blob responses include `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`
 - HTML, SVG, and other non-media files are served as attachments to reduce same-origin XSS risk in the admin panel
 - `/mirror` only accepts HTTPS and rejects localhost, private IPs, metadata IPs, and unsafe redirects
