@@ -307,6 +307,45 @@ function StatCard(props: { label: string; value: string }) {
   );
 }
 
+const THUMBNAIL_IMAGE_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+function BlobThumbnail(props: { blob: BlobRecord }) {
+  const [failed, setFailed] = useState(false);
+  const type = props.blob.type.toLowerCase().split(";")[0]?.trim() ?? "";
+  const isImage = THUMBNAIL_IMAGE_TYPES.has(type);
+
+  if (!isImage || failed) {
+    return (
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded border border-neutral-800 bg-neutral-950 text-[10px] uppercase tracking-wide text-neutral-600"
+        title={props.blob.type || "Unknown type"}
+        aria-hidden="true"
+      >
+        {isImage ? "IMG" : "FILE"}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={props.blob.url}
+      alt=""
+      title={props.blob.type}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className="h-10 w-10 rounded border border-neutral-800 bg-neutral-950 object-cover"
+    />
+  );
+}
+
 function Blobs(props: {
   maxUploadBytes: number;
   onError: (error: unknown) => void;
@@ -514,6 +553,7 @@ function Blobs(props: {
           <table className="min-w-full divide-y divide-neutral-800 text-sm">
             <thead className="bg-neutral-950 text-left text-xs uppercase tracking-wide text-neutral-400">
               <tr>
+                <th className="px-4 py-3">Preview</th>
                 <th className="px-4 py-3">URL</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Size</th>
@@ -525,6 +565,9 @@ function Blobs(props: {
             <tbody className="divide-y divide-neutral-800 bg-black">
               {blobs.map((blob) => (
                 <tr key={blob.sha256}>
+                  <td className="px-4 py-3">
+                    <BlobThumbnail blob={blob} />
+                  </td>
                   <td className="max-w-xs px-4 py-3">
                     <a
                       href={blob.url}
