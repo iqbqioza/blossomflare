@@ -569,22 +569,24 @@ function Blobs(props: {
                     <BlobThumbnail blob={blob} />
                   </td>
                   <td className="max-w-xs px-4 py-3">
-                    <a
-                      href={blob.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block truncate font-mono text-white hover:text-neutral-300"
-                      title={blob.url}
-                    >
-                      {blob.url}
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => void copy(blob.url)}
-                      className="mt-1 text-xs text-neutral-500 hover:text-neutral-300"
-                    >
-                      Copy
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={blob.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 flex-1 truncate font-mono text-white hover:text-neutral-300"
+                        title={blob.url}
+                      >
+                        {blob.url}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => void copy(blob.url)}
+                        className="shrink-0 whitespace-nowrap text-xs text-neutral-500 hover:text-neutral-300"
+                      >
+                        Copy
+                      </button>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-neutral-300">{blob.type}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-neutral-300">
