@@ -12,7 +12,7 @@ export class AuthError extends HttpError {
   }
 }
 
-export const BLOSSOM_CLOCK_SKEW_SECONDS = 30;
+const BLOSSOM_CLOCK_SKEW_SECONDS = 30;
 const MAX_BLOSSOM_TOKEN_LIFETIME_SECONDS = 60 * 60;
 const NIP98_WINDOW_SECONDS = 60;
 const MAX_AUTH_TOKEN_CHARS = 64 * 1024;

@@ -12,7 +12,7 @@ import { handleMirror } from "./mirror";
 import { handleReport } from "./report";
 import type { Env } from "./types";
 
-const BLOB_PATH = /^\/([0-9a-f]{64})(?:\.[A-Za-z0-9]{1,10})?$/;
+const BLOB_PATH = /^\/([0-9a-f]{64})(?:\.[A-Za-z0-9]{1,32})?$/;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

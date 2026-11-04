@@ -11,6 +11,7 @@ export interface Env {
 export type UploadPolicy = "open" | "allowlist";
 
 export interface BlobMeta {
+  uploadId?: string;
   sha256: string;
   pubkey: string;
   size: number;
