@@ -12,6 +12,7 @@ import {
   nip98Auth,
   pngBytes,
   resetDb,
+  testEnv,
   uploadAs,
 } from "./helpers";
 
@@ -90,6 +91,50 @@ describe("admin authorization", () => {
       body: JSON.stringify({ uploadPolicy: "open" }),
     });
     expect(response.status).toBe(401);
+  });
+
+  it("accepts standard base64 NIP-98 tokens", async () => {
+    const url = `${ADMIN_URL}/api/admin/settings`;
+    const authorization = await nip98Auth(
+      adminSecret(),
+      "GET",
+      url,
+      undefined,
+      { standardBase64: true },
+    );
+    const response = await SELF.fetch(url, {
+      headers: { Authorization: authorization },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("accepts NIP-98 tokens without an expiration tag", async () => {
+    const url = `${ADMIN_URL}/api/admin/settings`;
+    const authorization = await nip98Auth(
+      adminSecret(),
+      "GET",
+      url,
+      undefined,
+      { includeExpiration: false },
+    );
+    const response = await SELF.fetch(url, {
+      headers: { Authorization: authorization },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects a null settings body with 400", async () => {
+    const url = `${ADMIN_URL}/api/admin/settings`;
+    const authorization = await nip98Auth(adminSecret(), "PUT", url, "null");
+    const response = await SELF.fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+      },
+      body: "null",
+    });
+    expect(response.status).toBe(400);
   });
 });
 
@@ -247,13 +292,15 @@ describe("admin data endpoints", () => {
 
   it("stores and lists blob reports", async () => {
     const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
     const now = Math.floor(Date.now() / 1000);
     const report = finalizeEvent(
       {
         kind: 1984,
         created_at: now,
         tags: [
-          ["x", "ab".repeat(32), "malware"],
+          ["x", uploaded.sha256, "malware"],
           ["p", user.pubkey],
         ],
         content: "This is a test report",
@@ -275,5 +322,88 @@ describe("admin data endpoints", () => {
     expect(body.reports).toHaveLength(1);
     expect(body.reports[0]?.id).toBe(report.id);
     expect(body.reports[0]?.event?.content).toBe("This is a test report");
+  });
+
+  it("rejects reports for unknown blobs", async () => {
+    const user = newUser();
+    const report = finalizeEvent(
+      {
+        kind: 1984,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [["x", "ab".repeat(32), "malware"]],
+        content: "Unknown blob",
+      },
+      user.secret,
+    );
+
+    const posted = await SELF.fetch(`${ADMIN_URL}/report`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    expect(posted.status).toBe(400);
+  });
+
+  it("rejects reports that mix existing and unknown blobs", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
+    const report = finalizeEvent(
+      {
+        kind: 1984,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["x", uploaded.sha256, "malware"],
+          ["x", "ab".repeat(32), "malware"],
+        ],
+        content: "Mixed hashes",
+      },
+      user.secret,
+    );
+
+    const posted = await SELF.fetch(`${ADMIN_URL}/report`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    expect(posted.status).toBe(400);
+  });
+
+  it("rate-limits reports per pubkey", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
+    const now = Math.floor(Date.now() / 1000);
+
+    for (let index = 0; index < 20; index++) {
+      await testEnv.DB.prepare(
+        `INSERT INTO reports (id, pubkey, created_at, received_at, event_json)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          `${index.toString(16).padStart(64, "0")}`,
+          user.pubkey,
+          now,
+          now,
+          "{}",
+        )
+        .run();
+    }
+
+    const report = finalizeEvent(
+      {
+        kind: 1984,
+        created_at: now,
+        tags: [["x", uploaded.sha256, "malware"]],
+        content: "One too many",
+      },
+      user.secret,
+    );
+    const posted = await SELF.fetch(`${ADMIN_URL}/report`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    expect(posted.status).toBe(429);
   });
 });

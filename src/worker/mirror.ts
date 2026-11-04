@@ -8,6 +8,7 @@ import {
   jsonResponse,
   methodNotAllowed,
   readBodyWithLimit,
+  readStreamWithLimit,
 } from "./http";
 import { isSha256, sanitizeContentType } from "./mime";
 import type { Env } from "./types";
@@ -41,24 +42,35 @@ export async function handleMirror(
     return errorResponse(403, "uploader not allowed");
   }
 
-  let payload: MirrorRequest;
+  const expectedHashes = token.tags
+    .filter((tag) => tag[0] === "x" && typeof tag[1] === "string")
+    .map((tag) => (tag[1] as string).toLowerCase())
+    .filter(isSha256);
+  if (expectedHashes.length === 0) {
+    return errorResponse(401, "authorization is missing a blob hash");
+  }
+
+  let payload: unknown;
   try {
     const body = await readBodyWithLimit(request, MAX_MIRROR_BODY_BYTES);
-    payload = JSON.parse(new TextDecoder().decode(body)) as MirrorRequest;
+    payload = JSON.parse(new TextDecoder().decode(body));
   } catch (error) {
     if (error instanceof HttpError) throw error;
     return errorResponse(400, "invalid mirror request body");
   }
 
-  if (typeof payload.url !== "string") {
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    typeof (payload as MirrorRequest).url !== "string"
+  ) {
     return errorResponse(400, "mirror url is required");
   }
 
-  const sourceUrl = validateMirrorUrl(payload.url, requestUrl.hostname);
-  const expectedHashes = token.tags
-    .filter((tag) => tag[0] === "x" && typeof tag[1] === "string")
-    .map((tag) => (tag[1] as string).toLowerCase())
-    .filter(isSha256);
+  const sourceUrl = validateMirrorUrl(
+    (payload as MirrorRequest).url as string,
+    requestUrl.hostname,
+  );
   const maxBytes = getMaxUploadBytes(env);
 
   const fetched = await fetchWithRedirects(
@@ -107,8 +119,9 @@ function validateMirrorUrl(input: string, ownHostname: string): URL {
     throw new HttpError(400, "mirror url must not contain credentials");
   }
 
-  const hostname = url.hostname.toLowerCase();
-  if (hostname === ownHostname.toLowerCase()) {
+  const hostname = url.hostname.toLowerCase().replace(/\.+$/, "");
+  const own = ownHostname.toLowerCase().replace(/\.+$/, "");
+  if (hostname === own) {
     throw new HttpError(400, "cannot mirror from this server");
   }
   if (isBlockedHostname(hostname)) {
@@ -152,15 +165,18 @@ function isBlockedHostname(hostname: string): boolean {
   if (hostname.startsWith("[") && hostname.endsWith("]")) {
     const ipv6 = hostname.slice(1, -1).toLowerCase();
     return (
-      ipv6 === "::" ||
-      ipv6 === "::1" ||
+      // Includes ::, ::1, IPv4-mapped, and IPv4-compatible addresses.
+      ipv6.startsWith("::") ||
       ipv6.startsWith("fc") ||
       ipv6.startsWith("fd") ||
       ipv6.startsWith("fe8") ||
       ipv6.startsWith("fe9") ||
       ipv6.startsWith("fea") ||
       ipv6.startsWith("feb") ||
-      ipv6.startsWith("::ffff:")
+      // NAT64 and 6to4 can embed private IPv4 addresses.
+      ipv6.startsWith("64:ff9b:") ||
+      ipv6.startsWith("2002:") ||
+      ipv6.startsWith("2001:0:")
     );
   }
 
@@ -215,14 +231,30 @@ async function fetchWithRedirects(
       throw new HttpError(502, `mirror origin returned ${response.status}`);
     }
 
-    const contentLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    const rawLength = response.headers.get("content-length");
+    const contentLength = rawLength === null ? undefined : Number(rawLength);
+    if (
+      contentLength !== undefined &&
+      Number.isSafeInteger(contentLength) &&
+      contentLength >= 0 &&
+      contentLength > maxBytes
+    ) {
       throw new HttpError(413, "mirrored blob is too large");
     }
 
-    const body = await response.arrayBuffer();
-    if (body.byteLength > maxBytes) {
-      throw new HttpError(413, "mirrored blob is too large");
+    let body: ArrayBuffer;
+    try {
+      body = await readStreamWithLimit(
+        response.body,
+        maxBytes,
+        contentLength !== undefined && Number.isSafeInteger(contentLength) &&
+          contentLength >= 0
+          ? contentLength
+          : undefined,
+      );
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(502, "could not read mirror response");
     }
 
     return {

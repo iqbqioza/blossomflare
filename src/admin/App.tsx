@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addUploader,
   ApiError,
@@ -254,10 +254,12 @@ function Blobs(props: { onError: (error: unknown) => void }) {
   const [message, setMessage] = useState<string | null>(null);
 
   const cursor = cursors[cursorIndex] ?? null;
+  const navigatingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setNextCursor(null);
     listBlobs({ cursor, ...(filter ? { pubkey: filter } : {}) })
       .then((result) => {
         if (cancelled) return;
@@ -268,7 +270,10 @@ function Blobs(props: { onError: (error: unknown) => void }) {
         if (!cancelled) props.onError(error);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          navigatingRef.current = false;
+        }
       });
     return () => {
       cancelled = true;
@@ -276,6 +281,22 @@ function Blobs(props: { onError: (error: unknown) => void }) {
   }, [cursor, filter, reloadKey, props.onError]);
 
   const reload = () => setReloadKey((value) => value + 1);
+
+  const goPrevious = () => {
+    if (loading || cursorIndex === 0 || navigatingRef.current) return;
+    navigatingRef.current = true;
+    setCursorIndex((value) => Math.max(0, value - 1));
+  };
+
+  const goNext = () => {
+    if (loading || nextCursor === null || navigatingRef.current) return;
+    navigatingRef.current = true;
+    setCursors((value) => [
+      ...value.slice(0, cursorIndex + 1),
+      nextCursor,
+    ]);
+    setCursorIndex((value) => value + 1);
+  };
 
   const applyFilter = () => {
     const value = filterInput.trim().toLowerCase();
@@ -452,20 +473,16 @@ function Blobs(props: { onError: (error: unknown) => void }) {
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={cursorIndex === 0}
-            onClick={() => setCursorIndex((value) => Math.max(0, value - 1))}
+            disabled={loading || cursorIndex === 0}
+            onClick={goPrevious}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
           <button
             type="button"
-            disabled={nextCursor === null}
-            onClick={() => {
-              if (nextCursor === null) return;
-              setCursors((value) => [...value.slice(0, cursorIndex + 1), nextCursor]);
-              setCursorIndex((value) => value + 1);
-            }}
+            disabled={loading || nextCursor === null}
+            onClick={goNext}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
@@ -493,10 +510,12 @@ function Uploaders(props: {
   const [reloadKey, setReloadKey] = useState(0);
 
   const cursor = cursors[cursorIndex] ?? null;
+  const navigatingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setNextCursor(null);
     listUploaders(cursor)
       .then((result) => {
         if (cancelled) return;
@@ -507,7 +526,10 @@ function Uploaders(props: {
         if (!cancelled) props.onError(error);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          navigatingRef.current = false;
+        }
       });
     return () => {
       cancelled = true;
@@ -515,6 +537,22 @@ function Uploaders(props: {
   }, [cursor, reloadKey, props.onError]);
 
   const reload = () => setReloadKey((value) => value + 1);
+
+  const goPrevious = () => {
+    if (loading || cursorIndex === 0 || navigatingRef.current) return;
+    navigatingRef.current = true;
+    setCursorIndex((value) => Math.max(0, value - 1));
+  };
+
+  const goNext = () => {
+    if (loading || nextCursor === null || navigatingRef.current) return;
+    navigatingRef.current = true;
+    setCursors((value) => [
+      ...value.slice(0, cursorIndex + 1),
+      nextCursor,
+    ]);
+    setCursorIndex((value) => value + 1);
+  };
 
   const changePolicy = async (next: UploadPolicy) => {
     if (next === policy) return;
@@ -599,7 +637,7 @@ function Uploaders(props: {
             onChange={() => void changePolicy("open")}
           />
         </div>
-        {policy === "allowlist" && uploaders.length === 0 && (
+        {policy === "allowlist" && cursorIndex === 0 && uploaders.length === 0 && (
           <p className="mt-4 rounded-lg border border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
             The allowlist is empty. Only the administrator can upload right now.
           </p>
@@ -699,23 +737,16 @@ function Uploaders(props: {
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={cursorIndex === 0}
-              onClick={() => setCursorIndex((value) => Math.max(0, value - 1))}
+              disabled={loading || cursorIndex === 0}
+              onClick={goPrevious}
               className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
             <button
               type="button"
-              disabled={nextCursor === null}
-              onClick={() => {
-                if (nextCursor === null) return;
-                setCursors((value) => [
-                  ...value.slice(0, cursorIndex + 1),
-                  nextCursor,
-                ]);
-                setCursorIndex((value) => value + 1);
-              }}
+              disabled={loading || nextCursor === null}
+              onClick={goNext}
               className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
@@ -763,10 +794,12 @@ function Reports(props: { onError: (error: unknown) => void }) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const cursor = cursors[cursorIndex] ?? null;
+  const navigatingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setNextCursor(null);
     listReports(cursor)
       .then((result) => {
         if (cancelled) return;
@@ -777,12 +810,31 @@ function Reports(props: { onError: (error: unknown) => void }) {
         if (!cancelled) props.onError(error);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          navigatingRef.current = false;
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [cursor, props.onError]);
+
+  const goPrevious = () => {
+    if (loading || cursorIndex === 0 || navigatingRef.current) return;
+    navigatingRef.current = true;
+    setCursorIndex((value) => Math.max(0, value - 1));
+  };
+
+  const goNext = () => {
+    if (loading || nextCursor === null || navigatingRef.current) return;
+    navigatingRef.current = true;
+    setCursors((value) => [
+      ...value.slice(0, cursorIndex + 1),
+      nextCursor,
+    ]);
+    setCursorIndex((value) => value + 1);
+  };
 
   if (loading) return <Loading />;
 
@@ -847,20 +899,16 @@ function Reports(props: { onError: (error: unknown) => void }) {
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={cursorIndex === 0}
-            onClick={() => setCursorIndex((value) => Math.max(0, value - 1))}
+            disabled={loading || cursorIndex === 0}
+            onClick={goPrevious}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
           <button
             type="button"
-            disabled={nextCursor === null}
-            onClick={() => {
-              if (nextCursor === null) return;
-              setCursors((value) => [...value.slice(0, cursorIndex + 1), nextCursor]);
-              setCursorIndex((value) => value + 1);
-            }}
+            disabled={loading || nextCursor === null}
+            onClick={goNext}
             className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next

@@ -12,6 +12,8 @@ import { isSha256 } from "./mime";
 import type { Env } from "./types";
 
 const MAX_REPORT_BYTES = 64 * 1024;
+const MAX_REPORT_HASHES = 20;
+const MAX_REPORTS_PER_HOUR = 20;
 
 export async function handleReport(
   request: Request,
@@ -51,8 +53,33 @@ export async function handleReport(
   const hashes = event.tags
     .filter((tag) => tag[0] === "x" && typeof tag[1] === "string")
     .map((tag) => tag[1] as string);
-  if (hashes.length === 0 || !hashes.every(isSha256)) {
+  if (hashes.length === 0 || hashes.length > MAX_REPORT_HASHES) {
+    return errorResponse(400, "report must reference 1-20 blob hashes");
+  }
+  if (!hashes.every(isSha256)) {
     return errorResponse(400, "report must reference valid blob hashes");
+  }
+
+  const uniqueHashes = [...new Set(hashes)];
+  const placeholders = uniqueHashes.map(() => "?").join(", ");
+  const existing = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT sha256) AS count FROM blobs
+     WHERE sha256 IN (${placeholders})`,
+  )
+    .bind(...uniqueHashes)
+    .first<{ count: number }>();
+  if ((existing?.count ?? 0) !== uniqueHashes.length) {
+    return errorResponse(400, "report must reference existing blobs");
+  }
+
+  const recent = await env.DB.prepare(
+    `SELECT COUNT(*) AS count FROM reports
+     WHERE pubkey = ? AND received_at > ?`,
+  )
+    .bind(event.pubkey, Math.floor(Date.now() / 1000) - 60 * 60)
+    .first<{ count: number }>();
+  if ((recent?.count ?? 0) >= MAX_REPORTS_PER_HOUR) {
+    return errorResponse(429, "too many reports from this pubkey");
   }
 
   await insertReport(

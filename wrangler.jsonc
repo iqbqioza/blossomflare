@@ -3,9 +3,13 @@
   "name": "blossomflare",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-04",
+  "compatibility_flags": ["global_fetch_strictly_public"],
   "upload_source_maps": true,
   "observability": {
     "enabled": true
+  },
+  "previews": {
+    // Previews intentionally have no production D1/R2 bindings.
   },
   "assets": {
     "directory": "./dist/admin",

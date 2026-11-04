@@ -137,7 +137,7 @@ Removing an npub from the allowlist does not delete blobs that user has already 
 
 - BUD-05 (media optimization) and BUD-07 (payments) are not implemented
 - There is no per-user storage quota
-- The maximum upload size is capped at 100 MiB to stay within Worker memory limits
+- The maximum upload size is capped at 50 MiB to stay within Worker memory limits
 - `/list/<pubkey>` is implemented for administrative use, although BUD-12 marks it as unrecommended
 - The admin panel is intended for desktop browsers with a NIP-07 extension
 
@@ -153,10 +153,10 @@ pnpm exec wrangler r2 bucket create blossomflare-blobs
 # Set the displayed database_id in wrangler.jsonc
 pnpm exec wrangler secret put ADMIN_NPUB
 pnpm build
-pnpm deploy
+pnpm run deploy
 ```
 
-`pnpm deploy` applies migrations to the remote D1 database before running `wrangler deploy`.
+`pnpm run deploy` applies migrations to the remote D1 database before running `wrangler deploy`.
 
 ## License
 

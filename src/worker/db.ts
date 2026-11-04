@@ -62,6 +62,12 @@ export async function canUpload(env: Env, pubkey: string): Promise<boolean> {
   return row !== null;
 }
 
+const UPLOADER_CURSOR_PATTERN = /^(\d+):([0-9a-f]{64})$/;
+
+export function isUploaderCursor(value: string): boolean {
+  return UPLOADER_CURSOR_PATTERN.test(value);
+}
+
 export async function listUploaders(
   env: Env,
   cursor: string | null,
@@ -70,16 +76,16 @@ export async function listUploaders(
   let rows: UploaderEntry[];
 
   if (cursor !== null) {
-    const cursorRow = await env.DB.prepare(
-      "SELECT added_at FROM upload_allowlist WHERE pubkey = ?",
-    )
-      .bind(cursor)
-      .first<{ added_at: number }>();
-
-    if (!cursorRow) {
+    const match = UPLOADER_CURSOR_PATTERN.exec(cursor);
+    if (!match) {
       return { uploaders: [], nextCursor: null };
     }
 
+    const addedAt = Number(match[1]);
+    const pubkey = match[2] as string;
+    if (!Number.isSafeInteger(addedAt) || addedAt < 0) {
+      return { uploaders: [], nextCursor: null };
+    }
     const result = await env.DB.prepare(
       `SELECT pubkey, added_at, added_by
        FROM upload_allowlist
@@ -87,7 +93,7 @@ export async function listUploaders(
        ORDER BY added_at DESC, pubkey DESC
        LIMIT ?`,
     )
-      .bind(cursorRow.added_at, cursorRow.added_at, cursor, limit + 1)
+      .bind(addedAt, addedAt, pubkey, limit + 1)
       .all<{ pubkey: string; added_at: number; added_by: string }>();
     rows = result.results.map(mapUploader);
   } else {
@@ -104,9 +110,10 @@ export async function listUploaders(
 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
   return {
     uploaders: page,
-    nextCursor: hasMore ? page[page.length - 1]?.pubkey ?? null : null,
+    nextCursor: hasMore && last ? `${last.addedAt}:${last.pubkey}` : null,
   };
 }
 
@@ -165,30 +172,65 @@ export async function insertBlob(
   env: Env,
   meta: BlobMeta,
 ): Promise<boolean> {
-  const result = await env.DB.prepare(
-    `INSERT OR IGNORE INTO blobs
-       (sha256, pubkey, size, type, filename, uploaded)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO blobs
+         (sha256, pubkey, size, type, filename, uploaded)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
       meta.sha256,
       meta.pubkey,
       meta.size,
       meta.type,
       meta.filename,
       meta.uploaded,
-    )
-    .run();
-  return (result.meta.changes ?? 0) > 0;
+    ),
+    env.DB.prepare("DELETE FROM blob_tombstones WHERE sha256 = ?").bind(
+      meta.sha256,
+    ),
+  ]);
+  return (results[0]?.meta.changes ?? 0) > 0;
 }
 
-export async function deleteBlobMeta(
+interface BlobBoundary {
+  uploaded: number;
+  pubkey: string;
+}
+
+export async function getBlobBoundary(
   env: Env,
   sha256: string,
-): Promise<void> {
-  await env.DB.prepare("DELETE FROM blobs WHERE sha256 = ?")
+): Promise<BlobBoundary | null> {
+  const meta = await getBlobMeta(env, sha256);
+  if (meta) {
+    return { uploaded: meta.uploaded, pubkey: meta.pubkey };
+  }
+
+  return env.DB.prepare(
+    "SELECT uploaded, pubkey FROM blob_tombstones WHERE sha256 = ?",
+  )
     .bind(sha256)
-    .run();
+    .first<BlobBoundary>();
+}
+
+const TOMBSTONE_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+
+export async function tombstoneBlob(
+  env: Env,
+  meta: BlobMeta,
+): Promise<void> {
+  const deletedAt = nowSeconds();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT OR REPLACE INTO blob_tombstones
+         (sha256, pubkey, uploaded, deleted_at)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(meta.sha256, meta.pubkey, meta.uploaded, deletedAt),
+    env.DB.prepare("DELETE FROM blobs WHERE sha256 = ?").bind(meta.sha256),
+    env.DB.prepare("DELETE FROM blob_tombstones WHERE deleted_at < ?").bind(
+      deletedAt - TOMBSTONE_RETENTION_SECONDS,
+    ),
+  ]);
 }
 
 export async function listBlobs(
@@ -206,12 +248,12 @@ export async function listBlobs(
   }
 
   if (cursor !== null) {
-    const cursorMeta = await getBlobMeta(env, cursor);
-    if (!cursorMeta) {
+    const boundary = await getBlobBoundary(env, cursor);
+    if (!boundary || (pubkey !== null && boundary.pubkey !== pubkey)) {
       return { blobs: [], nextCursor: null };
     }
     filters.push("(uploaded < ? OR (uploaded = ? AND sha256 < ?))");
-    params.push(cursorMeta.uploaded, cursorMeta.uploaded, cursor);
+    params.push(boundary.uploaded, boundary.uploaded, cursor);
   }
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
