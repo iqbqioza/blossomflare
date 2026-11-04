@@ -74,80 +74,95 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/80">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              Blossomflare Admin
+    <div className="min-h-screen bg-black text-white md:flex">
+      <aside className="border-b border-neutral-800 bg-neutral-950 md:fixed md:inset-y-0 md:left-0 md:z-20 md:h-screen md:w-64 md:overflow-y-auto md:border-b-0 md:border-r">
+        <div className="flex h-full flex-col">
+          <div className="border-b border-neutral-800 px-5 py-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-neutral-500">
+              Blossomflare
+            </p>
+            <h1 className="mt-2 text-lg font-semibold tracking-tight">
+              Admin
             </h1>
-            <p className="mt-1 font-mono text-xs text-slate-400">
-              {shortHex(encodeNpub(session.adminPubkey), 16)}
+            <p
+              className="mt-3 truncate font-mono text-[11px] text-neutral-500"
+              title={encodeNpub(session.adminPubkey)}
+            >
+              {shortHex(encodeNpub(session.adminPubkey), 12)}
             </p>
           </div>
-          <button
-            type="button"
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-            onClick={() => {
-              setSession(null);
-              setError(null);
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4">
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id)}
-              className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
-                tab === item.id
-                  ? "border-sky-400 text-sky-300"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        {error !== null && (
-          <div className="mb-6 flex items-start justify-between gap-4 rounded-lg border border-rose-900 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">
-            <span>{error}</span>
+          <nav
+            aria-label="Admin sections"
+            className="flex gap-1 overflow-x-auto p-3 md:flex-col md:overflow-visible"
+          >
+            {TABS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className={`whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                  tab === item.id
+                    ? "bg-white font-medium text-black"
+                    : "text-neutral-400 hover:bg-neutral-900 hover:text-white"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="border-t border-neutral-800 p-3 md:mt-auto">
             <button
               type="button"
-              className="text-rose-300 hover:text-rose-100"
-              onClick={() => setError(null)}
+              className="w-full rounded-md border border-neutral-800 px-3 py-2 text-left text-sm text-neutral-400 transition-colors hover:border-neutral-600 hover:text-white"
+              onClick={() => {
+                setSession(null);
+                setError(null);
+              }}
             >
-              Dismiss
+              Sign out
             </button>
           </div>
-        )}
+        </div>
+      </aside>
 
-        {tab === "dashboard" && <Dashboard onError={handleError} />}
-        {tab === "blobs" && (
-          <Blobs
-            maxUploadBytes={session.maxUploadBytes}
-            onError={handleError}
-          />
-        )}
-        {tab === "uploaders" && (
-          <Uploaders
-            session={session}
-            onError={handleError}
-            onPolicyChange={(uploadPolicy) =>
-              setSession((current) =>
-                current === null ? current : { ...current, uploadPolicy }
-              )
-            }
-          />
-        )}
-        {tab === "reports" && <Reports onError={handleError} />}
-      </main>
+      <div className="min-w-0 flex-1 md:pl-64">
+        <main className="mx-auto max-w-6xl px-5 py-8 md:px-10">
+          {error !== null && (
+            <div className="mb-6 flex items-start justify-between gap-4 rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="text-neutral-500 hover:text-white"
+                onClick={() => setError(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {tab === "dashboard" && <Dashboard onError={handleError} />}
+          {tab === "blobs" && (
+            <Blobs
+              maxUploadBytes={session.maxUploadBytes}
+              onError={handleError}
+            />
+          )}
+          {tab === "uploaders" && (
+            <Uploaders
+              session={session}
+              onError={handleError}
+              onPolicyChange={(uploadPolicy) =>
+                setSession((current) =>
+                  current === null ? current : { ...current, uploadPolicy }
+                )
+              }
+            />
+          )}
+          {tab === "reports" && <Reports onError={handleError} />}
+        </main>
+      </div>
     </div>
   );
 }
@@ -160,24 +175,30 @@ function Login(props: {
   const available = hasNip07();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-slate-100">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-sky-400">
-          Blossomflare
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold">Admin sign-in</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-400">
-          Sign in with your admin npub. Your private key never leaves your browser extension.
+    <div className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
+      <div className="w-full max-w-md border border-neutral-800 bg-neutral-950 p-8">
+        <div className="flex items-center gap-3">
+          <span className="h-2 w-2 rounded-full bg-white" />
+          <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-neutral-500">
+            Blossomflare
+          </p>
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+          Admin sign-in
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-neutral-400">
+          Sign in with your admin npub. Your private key never leaves your browser
+          extension.
         </p>
 
         {!available && (
-          <div className="mt-5 rounded-lg border border-amber-900 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+          <div className="mt-5 border border-neutral-800 bg-black px-4 py-3 text-sm text-neutral-300">
             Install a NIP-07-compatible browser extension such as Alby.
           </div>
         )}
 
         {props.error !== null && (
-          <div className="mt-5 rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+          <div className="mt-5 border border-neutral-800 bg-black px-4 py-3 text-sm text-neutral-300">
             {props.error}
           </div>
         )}
@@ -186,13 +207,14 @@ function Login(props: {
           type="button"
           disabled={!available || props.loggingIn}
           onClick={() => void props.onLogin()}
-          className="mt-6 w-full rounded-lg bg-sky-500 px-4 py-2.5 font-medium text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+          className="mt-6 w-full bg-white px-4 py-2.5 font-medium text-black transition-colors hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
         >
           {props.loggingIn ? "Checking..." : "Sign in with NIP-07"}
         </button>
 
-        <p className="mt-4 text-xs leading-5 text-slate-500">
-          Sign-in requires the pubkey configured in the Cloudflare secret `ADMIN_NPUB`.
+        <p className="mt-4 text-xs leading-5 text-neutral-500">
+          Sign-in requires the pubkey configured in the Cloudflare secret{" "}
+          <code className="text-neutral-400">ADMIN_NPUB</code>.
         </p>
       </div>
     </div>
@@ -239,8 +261,8 @@ function Dashboard(props: { onError: (error: unknown) => void }) {
 
 function StatCard(props: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-      <p className="text-sm text-slate-400">{props.label}</p>
+    <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
+      <p className="text-sm text-neutral-400">{props.label}</p>
       <p className="mt-2 text-2xl font-semibold">{props.value}</p>
     </div>
   );
@@ -386,14 +408,14 @@ function Blobs(props: {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900 p-5 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-5 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="font-semibold">Blob management</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-neutral-400">
             Uploads and deletions are signed with NIP-07.
           </p>
         </div>
-        <label className="cursor-pointer rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400">
+        <label className="cursor-pointer rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200">
           {uploading ? "Uploading..." : "Upload file"}
           <input
             type="file"
@@ -408,7 +430,7 @@ function Blobs(props: {
       </div>
 
       {message !== null && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+        <div className="rounded-lg border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">
           {message}
         </div>
       )}
@@ -419,12 +441,12 @@ function Blobs(props: {
           onChange={(event) => setFilterInput(event.target.value)}
           placeholder="Filter by pubkey (64-character hex)"
           maxLength={64}
-          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
+          className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none focus:border-white"
         />
         <button
           type="button"
           onClick={applyFilter}
-          className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+          className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
         >
           Filter
         </button>
@@ -437,7 +459,7 @@ function Blobs(props: {
               setCursors([null]);
               setCursorIndex(0);
             }}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+            className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
           >
             Clear
           </button>
@@ -449,9 +471,9 @@ function Blobs(props: {
       ) : blobs.length === 0 ? (
         <Empty text="No blobs found" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
-          <table className="min-w-full divide-y divide-slate-800 text-sm">
-            <thead className="bg-slate-900 text-left text-xs uppercase tracking-wide text-slate-400">
+        <div className="overflow-x-auto rounded-xl border border-neutral-800">
+          <table className="min-w-full divide-y divide-neutral-800 text-sm">
+            <thead className="bg-neutral-950 text-left text-xs uppercase tracking-wide text-neutral-400">
               <tr>
                 <th className="px-4 py-3">URL</th>
                 <th className="px-4 py-3">Type</th>
@@ -461,7 +483,7 @@ function Blobs(props: {
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800 bg-slate-950/40">
+            <tbody className="divide-y divide-neutral-800 bg-black">
               {blobs.map((blob) => (
                 <tr key={blob.sha256}>
                   <td className="max-w-xs px-4 py-3">
@@ -469,7 +491,7 @@ function Blobs(props: {
                       href={blob.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="block truncate font-mono text-sky-400 hover:text-sky-300"
+                      className="block truncate font-mono text-white hover:text-neutral-300"
                       title={blob.url}
                     >
                       {blob.url}
@@ -477,19 +499,19 @@ function Blobs(props: {
                     <button
                       type="button"
                       onClick={() => void copy(blob.url)}
-                      className="mt-1 text-xs text-slate-500 hover:text-slate-300"
+                      className="mt-1 text-xs text-neutral-500 hover:text-neutral-300"
                     >
                       Copy
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{blob.type}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-300">
+                  <td className="px-4 py-3 text-neutral-300">{blob.type}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-neutral-300">
                     {formatBytes(blob.size)}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-400">
+                  <td className="whitespace-nowrap px-4 py-3 text-neutral-400">
                     {formatDate(blob.uploaded)}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-400">
+                  <td className="px-4 py-3 font-mono text-xs text-neutral-400">
                     {shortHex(encodeNpub(blob.pubkey), 10)}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -497,7 +519,7 @@ function Blobs(props: {
                       type="button"
                       disabled={deletingSha !== null}
                       onClick={() => void onDelete(blob)}
-                      className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {deletingSha === blob.sha256 ? "Deleting…" : "Delete"}
                     </button>
@@ -509,14 +531,14 @@ function Blobs(props: {
         </div>
       )}
 
-      <div className="flex items-center justify-between text-sm text-slate-400">
+      <div className="flex items-center justify-between text-sm text-neutral-400">
         <span>Page {cursorIndex + 1}</span>
         <div className="flex gap-2">
           <button
             type="button"
             disabled={loading || cursorIndex === 0}
             onClick={goPrevious}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
@@ -524,7 +546,7 @@ function Blobs(props: {
             type="button"
             disabled={loading || nextCursor === null}
             onClick={goNext}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>
@@ -672,9 +694,9 @@ function Uploaders(props: {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+      <section className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
         <h2 className="font-semibold">Upload policy</h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-neutral-400">
           The administrator can always upload, regardless of policy.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -694,13 +716,13 @@ function Uploaders(props: {
           />
         </div>
         {policy === "allowlist" && cursorIndex === 0 && uploaders.length === 0 && (
-          <p className="mt-4 rounded-lg border border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+          <p className="mt-4 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm text-neutral-300">
             The allowlist is empty. Only the administrator can upload right now.
           </p>
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+      <section className="rounded-xl border border-neutral-800 bg-neutral-950 p-5">
         <h2 className="font-semibold">Allowed npubs</h2>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input
@@ -708,33 +730,33 @@ function Uploaders(props: {
             onChange={(event) => setInput(event.target.value)}
             placeholder="npub1... or 64-character hex"
             maxLength={100}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
+            className="w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 font-mono text-sm outline-none focus:border-white"
           />
           <button
             type="button"
             disabled={saving}
             onClick={() => void add()}
-            className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Add
           </button>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-neutral-500">
           Never enter a private key (nsec).
         </p>
 
         {message !== null && (
-          <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+          <div className="mt-4 rounded-lg border border-neutral-700 bg-black px-4 py-3 text-sm text-neutral-300">
             {message}
           </div>
         )}
 
-        <div className="mt-4 rounded-lg border border-sky-900 bg-sky-950/20 px-4 py-3 text-sm">
-          <span className="text-sky-300">Administrator</span>
-          <span className="ml-2 font-mono text-xs text-slate-400">
+        <div className="mt-4 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm">
+          <span className="text-white">Administrator</span>
+          <span className="ml-2 font-mono text-xs text-neutral-400">
             {shortHex(encodeNpub(props.session.adminPubkey), 14)}
           </span>
-          <span className="ml-2 text-xs text-slate-500">Always allowed</span>
+          <span className="ml-2 text-xs text-neutral-500">Always allowed</span>
         </div>
 
         {loading ? (
@@ -742,9 +764,9 @@ function Uploaders(props: {
         ) : uploaders.length === 0 ? (
           <Empty text="No npubs are on the allowlist" />
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-800">
-            <table className="min-w-full divide-y divide-slate-800 text-sm">
-              <thead className="bg-slate-950 text-left text-xs uppercase tracking-wide text-slate-400">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-neutral-800">
+            <table className="min-w-full divide-y divide-neutral-800 text-sm">
+              <thead className="bg-black text-left text-xs uppercase tracking-wide text-neutral-400">
                 <tr>
                   <th className="px-4 py-3">npub</th>
                   <th className="px-4 py-3">Added</th>
@@ -752,7 +774,7 @@ function Uploaders(props: {
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-neutral-800">
                 {uploaders.map((entry) => {
                   const npub = encodeNpub(entry.pubkey);
                   return (
@@ -761,16 +783,16 @@ function Uploaders(props: {
                         <button
                           type="button"
                           onClick={() => void copy(npub)}
-                          className="block truncate font-mono text-xs text-sky-400 hover:text-sky-300"
+                          className="block truncate font-mono text-xs text-white hover:text-neutral-300"
                           title={npub}
                         >
                           {npub}
                         </button>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-400">
+                      <td className="whitespace-nowrap px-4 py-3 text-neutral-400">
                         {formatDate(entry.addedAt)}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                      <td className="px-4 py-3 font-mono text-xs text-neutral-500">
                         {shortHex(encodeNpub(entry.addedBy), 8)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -778,7 +800,7 @@ function Uploaders(props: {
                           type="button"
                           disabled={saving}
                           onClick={() => void remove(entry.pubkey)}
-                          className="rounded-md border border-rose-900 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/50 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Delete
                         </button>
@@ -791,14 +813,14 @@ function Uploaders(props: {
           </div>
         )}
 
-        <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+        <div className="mt-4 flex items-center justify-between text-sm text-neutral-400">
           <span>Page {cursorIndex + 1}</span>
           <div className="flex gap-2">
             <button
               type="button"
               disabled={loading || cursorIndex === 0}
               onClick={goPrevious}
-              className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-neutral-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
@@ -806,7 +828,7 @@ function Uploaders(props: {
               type="button"
               disabled={loading || nextCursor === null}
               onClick={goNext}
-              className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-neutral-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>
@@ -828,8 +850,8 @@ function PolicyOption(props: {
     <label
       className={`cursor-pointer rounded-lg border p-4 ${
         props.checked
-          ? "border-sky-500 bg-sky-950/30"
-          : "border-slate-700 bg-slate-950"
+          ? "border-white bg-neutral-900"
+          : "border-neutral-700 bg-black"
       } ${props.disabled ? "opacity-60" : ""}`}
     >
       <input
@@ -837,10 +859,10 @@ function PolicyOption(props: {
         checked={props.checked}
         disabled={props.disabled}
         onChange={props.onChange}
-        className="mr-2 accent-sky-500"
+        className="mr-2 accent-white"
       />
       <span className="font-medium">{props.title}</span>
-      <p className="mt-2 pl-6 text-sm text-slate-400">{props.description}</p>
+      <p className="mt-2 pl-6 text-sm text-neutral-400">{props.description}</p>
     </label>
   );
 }
@@ -905,7 +927,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
     <div className="space-y-4">
       <div>
         <h2 className="font-semibold">Blob reports</h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-neutral-400">
           Reports submitted as NIP-56 (kind 1984).
         </p>
       </div>
@@ -918,37 +940,37 @@ function Reports(props: { onError: (error: unknown) => void }) {
           return (
             <article
               key={report.id}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-5"
+              className="rounded-xl border border-neutral-800 bg-neutral-950 p-5"
             >
               <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <span className="font-mono text-xs text-slate-500">
+                <span className="font-mono text-xs text-neutral-500">
                   {report.id}
                 </span>
-                <span className="text-slate-400">
+                <span className="text-neutral-400">
                   {formatDate(report.receivedAt)}
                 </span>
               </div>
-              <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">
+              <p className="mt-3 whitespace-pre-wrap text-sm text-neutral-200">
                 {report.event?.content || "(No content)"}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {xTags.map((tag, index) => (
                   <code
                     key={`${tag[1] ?? "x"}-${index}`}
-                    className="rounded bg-slate-950 px-2 py-1 text-xs text-slate-400"
+                    className="rounded bg-black px-2 py-1 text-xs text-neutral-400"
                   >
                     {tag[1]} {tag[2] ? `(${tag[2]})` : ""}
                   </code>
                 ))}
               </div>
-              <p className="mt-3 font-mono text-xs text-slate-500">
+              <p className="mt-3 font-mono text-xs text-neutral-500">
                 Reporter: {shortHex(encodeNpub(report.pubkey), 10)}
               </p>
-              <details className="mt-3 text-xs text-slate-500">
-                <summary className="cursor-pointer hover:text-slate-300">
+              <details className="mt-3 text-xs text-neutral-500">
+                <summary className="cursor-pointer hover:text-neutral-300">
                   Raw event JSON
                 </summary>
-                <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-3">
+                <pre className="mt-2 overflow-x-auto rounded-lg bg-black p-3">
                   {JSON.stringify(report.event, null, 2)}
                 </pre>
               </details>
@@ -957,14 +979,14 @@ function Reports(props: { onError: (error: unknown) => void }) {
         })
       )}
 
-      <div className="flex items-center justify-between text-sm text-slate-400">
+      <div className="flex items-center justify-between text-sm text-neutral-400">
         <span>Page {cursorIndex + 1}</span>
         <div className="flex gap-2">
           <button
             type="button"
             disabled={loading || cursorIndex === 0}
             onClick={goPrevious}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
@@ -972,7 +994,7 @@ function Reports(props: { onError: (error: unknown) => void }) {
             type="button"
             disabled={loading || nextCursor === null}
             onClick={goNext}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>
@@ -984,13 +1006,13 @@ function Reports(props: { onError: (error: unknown) => void }) {
 
 function Loading() {
   return (
-    <div className="py-12 text-center text-sm text-slate-500">Loading...</div>
+    <div className="py-12 text-center text-sm text-neutral-500">Loading...</div>
   );
 }
 
 function Empty(props: { text: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-12 text-center text-sm text-slate-500">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-12 text-center text-sm text-neutral-500">
       {props.text}
     </div>
   );
