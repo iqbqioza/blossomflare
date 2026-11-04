@@ -1,3 +1,4 @@
+export { BlobCoordinator } from "./coordinator";
 import { handleAdmin } from "./admin";
 import { handleDelete, handleGetBlob, handleHeadUpload, handleList, handleMedia, handleUpload } from "./blobs";
 import {

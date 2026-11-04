@@ -7,10 +7,9 @@ import {
   canUpload,
   consumeAuthEvent,
   getBlobMeta,
-  insertBlob,
   listBlobs,
-  tombstoneBlob,
 } from "./db";
+import { getBlobCoordinator } from "./coordinator-client";
 import { sha256Hex } from "./crypto";
 import {
   errorResponse,
@@ -46,77 +45,6 @@ export function toDescriptor(origin: string, meta: BlobMeta): BlobDescriptor {
     type: meta.type,
     uploaded: meta.uploaded,
   };
-}
-
-export async function storeBlob(
-  env: Env,
-  data: ArrayBuffer,
-  sha256: string,
-  type: string,
-  pubkey: string,
-): Promise<{ created: boolean; meta: BlobMeta }> {
-  const existing = await getBlobMeta(env, sha256);
-
-  if (existing) {
-    if (await env.BLOBS.head(sha256)) {
-      return { created: false, meta: existing };
-    }
-
-    await env.BLOBS.put(sha256, data, {
-      httpMetadata: { contentType: type },
-      customMetadata: { pubkey },
-    });
-
-    const confirmed = await getBlobMeta(env, sha256);
-    if (confirmed) {
-      return { created: false, meta: confirmed };
-    }
-
-    // The metadata row disappeared while this upload was in flight.
-    const replacement: BlobMeta = {
-      uploadId: crypto.randomUUID(),
-      sha256,
-      pubkey,
-      size: data.byteLength,
-      type,
-      filename: null,
-      uploaded: Math.floor(Date.now() / 1000),
-    };
-    const inserted = await insertBlob(env, replacement);
-    return inserted
-      ? { created: true, meta: replacement }
-      : { created: false, meta: await getBlobMeta(env, sha256) ?? replacement };
-  }
-
-  const meta: BlobMeta = {
-    uploadId: crypto.randomUUID(),
-    sha256,
-    pubkey,
-    size: data.byteLength,
-    type,
-    filename: null,
-    uploaded: Math.floor(Date.now() / 1000),
-  };
-
-  await env.BLOBS.put(sha256, data, {
-    httpMetadata: { contentType: type },
-    customMetadata: { pubkey },
-  });
-
-  if (await insertBlob(env, meta)) {
-    return { created: true, meta };
-  }
-
-  const row = await getBlobMeta(env, sha256);
-  if (row) {
-    return { created: false, meta: row };
-  }
-
-  // A concurrent delete removed the row after our insert attempt.
-  if (await insertBlob(env, meta)) {
-    return { created: true, meta };
-  }
-  return { created: false, meta: await getBlobMeta(env, sha256) ?? meta };
 }
 
 export async function handleGetBlob(
@@ -294,7 +222,12 @@ export async function handleUpload(
   }
 
   const type = sanitizeContentType(request.headers.get("content-type"));
-  const stored = await storeBlob(env, body, actualHash, type, token.pubkey);
+  const stored = await getBlobCoordinator(env, actualHash).store(
+    body,
+    actualHash,
+    type,
+    token.pubkey,
+  );
   const descriptor = toDescriptor(url.origin, stored.meta);
 
   return jsonResponse(descriptor, stored.created ? 201 : 200);
@@ -374,26 +307,16 @@ export async function handleDelete(
     return errorResponse(401, "authorization token already used");
   }
 
-  // Remove the metadata and preserve the cursor boundary atomically. If R2
-  // deletion fails afterwards, the blob is still unavailable through the API
-  // because reads require a metadata row.
-  const deleted = await tombstoneBlob(env, meta);
-  if (!deleted) {
+  if (meta.uploadId === undefined) {
     return errorResponse(409, "blob changed during deletion");
   }
 
-  // A concurrent upload may have re-created the metadata row and written a
-  // new R2 object. Never delete that object as part of the old delete.
-  if ((await getBlobMeta(env, sha256)) === null) {
-    try {
-      await env.BLOBS.delete(sha256);
-    } catch (error) {
-      console.error(
-        "Failed to delete R2 object after metadata deletion",
-        sha256,
-        error instanceof Error ? error.message : "unknown error",
-      );
-    }
+  const result = await getBlobCoordinator(env, sha256).remove(
+    sha256,
+    meta.uploadId,
+  );
+  if (result.conflict) {
+    return errorResponse(409, "blob changed during deletion");
   }
   return new Response(null, { status: 204 });
 }

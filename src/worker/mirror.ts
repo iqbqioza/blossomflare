@@ -1,5 +1,6 @@
 import { verifyBlossomAuth } from "./auth";
-import { storeBlob, toDescriptor, getMaxUploadBytes } from "./blobs";
+import { toDescriptor, getMaxUploadBytes } from "./blobs";
+import { getBlobCoordinator } from "./coordinator-client";
 import { canUpload } from "./db";
 import { sha256Hex } from "./crypto";
 import {
@@ -87,8 +88,7 @@ export async function handleMirror(
     );
   }
 
-  const stored = await storeBlob(
-    env,
+  const stored = await getBlobCoordinator(env, actualHash).store(
     fetched.body,
     actualHash,
     fetched.type,
