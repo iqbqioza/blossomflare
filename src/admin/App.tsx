@@ -159,7 +159,7 @@ export default function App() {
       <aside className="border-b border-neutral-800 bg-neutral-950 md:fixed md:inset-y-0 md:left-0 md:z-20 md:h-screen md:w-64 md:overflow-y-auto md:border-b-0 md:border-r">
         <div className="flex h-full flex-col">
           <div className="border-b border-neutral-800 px-5 py-5">
-            <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-neutral-500">
+            <p className="text-xs font-medium tracking-wide text-neutral-500">
               Blossomflare
             </p>
             <h1 className="mt-2 text-lg font-semibold tracking-tight">
@@ -252,7 +252,7 @@ function Login(props: {
       <div className="w-full max-w-md border border-neutral-800 bg-neutral-950 p-8">
         <div className="flex items-center gap-3">
           <span className="h-2 w-2 rounded-full bg-white" />
-          <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-neutral-500">
+          <p className="text-xs font-medium tracking-wide text-neutral-500">
             Blossomflare
           </p>
         </div>
