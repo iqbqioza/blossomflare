@@ -41,6 +41,14 @@ export function encodeBase64Url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
+export function encodeBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 export function authHeader(event: Event): string {
   return `Nostr ${encodeBase64Url(new TextEncoder().encode(JSON.stringify(event)))}`;
 }
@@ -80,18 +88,26 @@ export function blossomAuth(
   return authHeader(event);
 }
 
+interface Nip98Options {
+  includeExpiration?: boolean;
+  standardBase64?: boolean;
+}
+
 export async function nip98Auth(
   secret: Uint8Array,
   method: string,
   url: string,
   body?: string | Uint8Array,
+  options: Nip98Options = {},
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const tags: string[][] = [
     ["u", url],
     ["method", method.toUpperCase()],
-    ["expiration", String(now + 60)],
   ];
+  if (options.includeExpiration !== false) {
+    tags.push(["expiration", String(now + 60)]);
+  }
 
   if (body !== undefined) {
     const bytes = typeof body === "string"
@@ -104,7 +120,12 @@ export async function nip98Auth(
     { kind: 27235, created_at: now, tags, content: "" },
     secret,
   );
-  return authHeader(event);
+  const encoded = new TextEncoder().encode(JSON.stringify(event));
+  return `Nostr ${
+    options.standardBase64 === true
+      ? encodeBase64(encoded)
+      : encodeBase64Url(encoded)
+  }`;
 }
 
 export async function adminFetch(
@@ -128,12 +149,16 @@ export async function adminFetch(
 export async function resetDb(): Promise<void> {
   await testEnv.DB.batch([
     testEnv.DB.prepare("DELETE FROM blobs"),
+    testEnv.DB.prepare("DELETE FROM blob_tombstones"),
     testEnv.DB.prepare("DELETE FROM reports"),
     testEnv.DB.prepare("DELETE FROM upload_allowlist"),
     testEnv.DB.prepare(
       "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('upload_policy', 'allowlist', ?)",
     ).bind(Math.floor(Date.now() / 1000)),
   ]);
+
+  const objects = await testEnv.BLOBS.list();
+  await Promise.all(objects.objects.map((object) => testEnv.BLOBS.delete(object.key)));
 }
 
 export async function allowUploader(pubkey: string): Promise<void> {

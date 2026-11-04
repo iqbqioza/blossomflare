@@ -94,6 +94,49 @@ describe("mirror", () => {
     expect(response.status).toBe(403);
   });
 
+  it("requires an x tag before making an outbound request", async () => {
+    let calls = 0;
+    stubFetch(async () => {
+      calls += 1;
+      return new Response(pngBytes, { status: 200 });
+    });
+
+    const response = await SELF.fetch(`${ADMIN_URL}/mirror`, {
+      method: "PUT",
+      headers: {
+        Authorization: blossomAuth(adminSecret(), { action: "upload" }),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url: "https://cdn.example.com/image.png" }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a null mirror body with 400", async () => {
+    let calls = 0;
+    stubFetch(async () => {
+      calls += 1;
+      return new Response(pngBytes, { status: 200 });
+    });
+
+    const response = await SELF.fetch(`${ADMIN_URL}/mirror`, {
+      method: "PUT",
+      headers: {
+        Authorization: blossomAuth(adminSecret(), {
+          action: "upload",
+          hash: await sha256Hex(pngBytes),
+        }),
+        "Content-Type": "application/json",
+      },
+      body: "null",
+    });
+
+    expect(response.status).toBe(400);
+    expect(calls).toBe(0);
+  });
+
   it("allows an allowlisted uploader", async () => {
     const user = newUser();
     await allowUploader(user.pubkey);
@@ -116,9 +159,17 @@ describe("mirror", () => {
   it.each([
     "http://example.com/image.png",
     "https://localhost/image.png",
+    "https://localhost./image.png",
     "https://127.0.0.1/image.png",
+    "https://127.0.0.1./image.png",
+    "https://0177.0.0.1/image.png",
+    "https://2130706433/image.png",
     "https://[::1]/image.png",
+    "https://[::7f00:1]/image.png",
+    "https://[64:ff9b::7f00:1]/image.png",
+    "https://[2002:7f00:1::]/image.png",
     "https://169.254.169.254/latest/meta-data",
+    "https://metadata.google.internal./latest/meta-data",
     "https://user:pass@example.com/image.png",
   ])("blocks unsafe mirror URL %s", async (url) => {
     stubFetch(async () => {

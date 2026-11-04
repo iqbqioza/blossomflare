@@ -176,7 +176,29 @@ describe("BUD-11 authorization", () => {
     const authorization = blossomAuth(user.secret, {
       action: "upload",
       hash: sha256,
-      createdAtOffset: 1000,
+      createdAtOffset: 100,
+    });
+
+    const response = await SELF.fetch(`${ADMIN_URL}/upload`, {
+      method: "PUT",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "image/png",
+        "X-SHA-256": sha256,
+      },
+      body: pngBytes,
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a token with an excessive lifetime", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const sha256 = await sha256Hex(pngBytes);
+    const authorization = blossomAuth(user.secret, {
+      action: "upload",
+      hash: sha256,
+      expirationOffset: 7200,
     });
 
     const response = await SELF.fetch(`${ADMIN_URL}/upload`, {

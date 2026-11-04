@@ -10,6 +10,7 @@ import {
   newUser,
   pngBytes,
   resetDb,
+  testEnv,
   uploadAs,
 } from "./helpers";
 
@@ -81,11 +82,91 @@ describe("blob retrieval", () => {
     expect(response.headers.get("content-range")).toBe(
       `bytes */${pngBytes.byteLength}`,
     );
+    expect(response.headers.get("content-length")).toBe("0");
+  });
+
+  it("honors Range when If-Range matches", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const data = bytes("0123456789");
+    const { sha256 } = await uploadAs(user.secret, data, {
+      contentType: "text/plain",
+    });
+
+    const head = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      method: "HEAD",
+    });
+    const etag = head.headers.get("etag");
+    expect(etag).not.toBeNull();
+
+    const response = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      headers: {
+        Range: "bytes=2-5",
+        "If-Range": etag as string,
+      },
+    });
+    expect(response.status).toBe(206);
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe("2345");
+  });
+
+  it("ignores Range when If-Range does not match", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const data = bytes("0123456789");
+    const { sha256 } = await uploadAs(user.secret, data, {
+      contentType: "text/plain",
+    });
+
+    const response = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      headers: {
+        Range: "bytes=2-5",
+        "If-Range": '"not-the-current-etag"',
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe(
+      "0123456789",
+    );
+  });
+
+  it("ignores unsupported multiple ranges", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const data = bytes("0123456789");
+    const { sha256 } = await uploadAs(user.secret, data, {
+      contentType: "text/plain",
+    });
+
+    const response = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      headers: { Range: "bytes=0-1,4-5" },
+    });
+    expect(response.status).toBe(200);
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe(
+      "0123456789",
+    );
   });
 
   it("returns 404 for an unknown blob", async () => {
     const response = await SELF.fetch(`${ADMIN_URL}/${"ab".repeat(32)}`);
     expect(response.status).toBe(404);
+  });
+
+  it("does not serve orphaned R2 objects without metadata", async () => {
+    const sha256 = await sha256Hex(pngBytes);
+    await testEnv.BLOBS.put(sha256, pngBytes, {
+      httpMetadata: { contentType: "image/png" },
+    });
+
+    const orphan = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    expect(orphan.status).toBe(404);
+
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const uploaded = await uploadAs(user.secret, pngBytes);
+    expect(uploaded.response.status).toBe(201);
+
+    const repaired = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    expect(repaired.status).toBe(200);
   });
 });
 
@@ -177,6 +258,40 @@ describe("blob deletion", () => {
     const deleted = await deleteAs(user.secret, "ab".repeat(32));
     expect(deleted.status).toBe(404);
   });
+
+  it("rejects a delete token replayed against a re-uploaded blob", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+    const tokenCreatedAt = Math.floor(Date.now() / 1000);
+    const replayToken = blossomAuth(user.secret, {
+      action: "delete",
+      hash: sha256,
+    });
+
+    const firstDelete = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      method: "DELETE",
+      headers: { Authorization: replayToken },
+    });
+    expect(firstDelete.status).toBe(204);
+
+    const reuploaded = await uploadAs(user.secret, pngBytes);
+    expect(reuploaded.response.status).toBe(201);
+    await testEnv.DB.prepare(
+      "UPDATE blobs SET uploaded = ? WHERE sha256 = ?",
+    )
+      .bind(tokenCreatedAt + 100, sha256)
+      .run();
+
+    const replay = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      method: "DELETE",
+      headers: { Authorization: replayToken },
+    });
+    expect(replay.status).toBe(401);
+
+    const stillThere = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    expect(stillThere.status).toBe(200);
+  });
 });
 
 describe("blob listing", () => {
@@ -206,6 +321,88 @@ describe("blob listing", () => {
     expect(
       new Set([...firstPage, ...secondPage].map((item) => item.sha256)),
     ).toEqual(new Set(hashes));
+  });
+
+  it("keeps pagination working when the cursor blob is deleted", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    for (const value of ["one", "two", "three"]) {
+      await uploadAs(user.secret, bytes(value));
+    }
+
+    const first = await SELF.fetch(
+      `${ADMIN_URL}/list/${user.pubkey}?limit=2`,
+    );
+    expect(first.status).toBe(200);
+    const cursor = first.headers.get("x-next-cursor");
+    expect(cursor).not.toBeNull();
+
+    const deleted = await deleteAs(user.secret, cursor as string);
+    expect(deleted.status).toBe(204);
+
+    const second = await SELF.fetch(
+      `${ADMIN_URL}/list/${user.pubkey}?limit=2&cursor=${cursor}`,
+    );
+    expect(second.status).toBe(200);
+    const secondPage = (await second.json()) as Array<{ sha256: string }>;
+    expect(secondPage).toHaveLength(1);
+  });
+
+  it("paginates after a blob is re-uploaded by another pubkey", async () => {
+    const firstUser = newUser();
+    const secondUser = newUser();
+    await allowUploader(firstUser.pubkey);
+    await allowUploader(secondUser.pubkey);
+
+    const reuploaded = await uploadAs(firstUser.secret, pngBytes);
+    expect(reuploaded.response.status).toBe(201);
+    expect((await deleteAs(firstUser.secret, reuploaded.sha256)).status).toBe(
+      204,
+    );
+
+    const older = await uploadAs(secondUser.secret, bytes("older blob"));
+    expect(older.response.status).toBe(201);
+    const again = await uploadAs(secondUser.secret, pngBytes);
+    expect(again.response.status).toBe(201);
+
+    await testEnv.DB.batch([
+      testEnv.DB.prepare(
+        "UPDATE blobs SET uploaded = 100 WHERE sha256 = ?",
+      ).bind(older.sha256),
+      testEnv.DB.prepare(
+        "UPDATE blobs SET uploaded = 200 WHERE sha256 = ?",
+      ).bind(reuploaded.sha256),
+    ]);
+
+    const firstPage = await SELF.fetch(
+      `${ADMIN_URL}/list/${secondUser.pubkey}?limit=1`,
+    );
+    const firstItems = (await firstPage.json()) as Array<{ sha256: string }>;
+    expect(firstItems).toHaveLength(1);
+    expect(firstItems[0]?.sha256).toBe(reuploaded.sha256);
+
+    const cursor = firstPage.headers.get("x-next-cursor");
+    const secondPage = await SELF.fetch(
+      `${ADMIN_URL}/list/${secondUser.pubkey}?limit=1&cursor=${cursor}`,
+    );
+    const secondItems = (await secondPage.json()) as Array<{ sha256: string }>;
+    expect(secondItems).toHaveLength(1);
+    expect(secondItems[0]?.sha256).toBe(older.sha256);
+  });
+
+  it("rejects a cursor belonging to another pubkey", async () => {
+    const owner = newUser();
+    const other = newUser();
+    await allowUploader(owner.pubkey);
+    await allowUploader(other.pubkey);
+    const ownerBlob = await uploadAs(owner.secret, bytes("owner"));
+    await uploadAs(other.secret, bytes("other"));
+
+    const response = await SELF.fetch(
+      `${ADMIN_URL}/list/${other.pubkey}?cursor=${ownerBlob.sha256}`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
   });
 
   it("rejects an invalid pubkey", async () => {
