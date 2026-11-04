@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   addUploader,
   ApiError,
@@ -346,6 +353,150 @@ function BlobThumbnail(props: { blob: BlobRecord }) {
   );
 }
 
+function ConfirmDialog(props: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  busyLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  children: ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const { busy, onCancel } = props;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    cancelRef.current?.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={busy}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onCancel();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-neutral-700 bg-neutral-950 p-0 text-white backdrop:bg-black/80"
+    >
+      <div className="space-y-5 p-5">
+        <div>
+          <h2 id={titleId} className="text-lg font-semibold">
+            {props.title}
+          </h2>
+          <p id={descriptionId} className="mt-1 text-sm text-neutral-400">
+            {props.description}
+          </p>
+        </div>
+
+        {props.children}
+
+        <div className="flex justify-end gap-2">
+          <button
+            ref={cancelRef}
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={props.onConfirm}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? props.busyLabel : props.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+function DeleteBlobDialog(props: {
+  blob: BlobRecord;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      title="Delete blob"
+      description="This permanently removes the blob from storage. This action cannot be undone."
+      confirmLabel="Delete"
+      busyLabel="Deleting…"
+      busy={props.deleting}
+      onCancel={props.onCancel}
+      onConfirm={props.onConfirm}
+    >
+      <div className="flex gap-4 rounded-lg border border-neutral-800 bg-black p-4">
+        <BlobThumbnail blob={props.blob} />
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="break-all font-mono text-xs text-neutral-300">
+            {props.blob.url}
+          </p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            <dt className="text-neutral-500">Type</dt>
+            <dd className="truncate text-neutral-300">
+              {props.blob.type || "Unknown"}
+            </dd>
+            <dt className="text-neutral-500">Size</dt>
+            <dd className="text-neutral-300">{formatBytes(props.blob.size)}</dd>
+          </dl>
+        </div>
+      </div>
+    </ConfirmDialog>
+  );
+}
+
+function RemoveUploaderDialog(props: {
+  uploader: UploaderEntry;
+  removing: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      title="Remove from allowlist"
+      description="This revokes upload permission for this npub. Existing blobs remain."
+      confirmLabel="Remove"
+      busyLabel="Removing…"
+      busy={props.removing}
+      onCancel={props.onCancel}
+      onConfirm={props.onConfirm}
+    >
+      <div className="space-y-2 rounded-lg border border-neutral-800 bg-black p-4">
+        <p className="break-all font-mono text-xs text-neutral-300">
+          {encodeNpub(props.uploader.pubkey)}
+        </p>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          <dt className="text-neutral-500">Added</dt>
+          <dd className="text-neutral-300">
+            {formatDate(props.uploader.addedAt)}
+          </dd>
+        </dl>
+      </div>
+    </ConfirmDialog>
+  );
+}
+
 function Blobs(props: {
   maxUploadBytes: number;
   onError: (error: unknown) => void;
@@ -360,6 +511,7 @@ function Blobs(props: {
   const [reloadKey, setReloadKey] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [deletingSha, setDeletingSha] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<BlobRecord | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const cursor = cursors[cursorIndex] ?? null;
@@ -451,17 +603,19 @@ function Blobs(props: {
     }
   };
 
-  const onDelete = async (blob: BlobRecord) => {
-    if (deletingSha !== null) return;
-    if (!window.confirm(`Delete this blob?\n${blob.sha256}`)) return;
+  const confirmDelete = async () => {
+    const blob = pendingDelete;
+    if (blob === null || deletingSha !== null) return;
 
     setDeletingSha(blob.sha256);
     setMessage(null);
     try {
       await deleteBlob(blob.sha256);
+      setPendingDelete(null);
       setMessage("Blob deleted");
       reload();
     } catch (error) {
+      setPendingDelete(null);
       if (
         error instanceof ApiError &&
         (error.status === 401 || error.status === 403)
@@ -602,10 +756,10 @@ function Blobs(props: {
                     <button
                       type="button"
                       disabled={deletingSha !== null}
-                      onClick={() => void onDelete(blob)}
+                      onClick={() => setPendingDelete(blob)}
                       className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {deletingSha === blob.sha256 ? "Deleting…" : "Delete"}
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -636,6 +790,15 @@ function Blobs(props: {
           </button>
         </div>
       </div>
+
+      {pendingDelete !== null && (
+        <DeleteBlobDialog
+          blob={pendingDelete}
+          deleting={deletingSha !== null}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
     </div>
   );
 }
@@ -655,6 +818,7 @@ function Uploaders(props: {
   const [message, setMessage] = useState<string | null>(null);
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<UploaderEntry | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const cursor = cursors[cursorIndex] ?? null;
@@ -748,19 +912,19 @@ function Uploaders(props: {
     }
   };
 
-  const remove = async (pubkey: string) => {
-    if (saving) return;
-    if (!window.confirm(`Remove from the allowlist?\n${encodeNpub(pubkey)}`)) {
-      return;
-    }
+  const confirmRemove = async () => {
+    const entry = pendingRemove;
+    if (entry === null || saving) return;
 
     setSaving(true);
     setMessage(null);
     try {
-      await removeUploader(pubkey);
+      await removeUploader(entry.pubkey);
+      setPendingRemove(null);
       setMessage("Removed from the allowlist. Existing blobs remain.");
       reload();
     } catch (error) {
+      setPendingRemove(null);
       props.onError(error);
     } finally {
       setSaving(false);
@@ -854,7 +1018,6 @@ function Uploaders(props: {
                 <tr>
                   <th className="px-4 py-3">npub</th>
                   <th className="px-4 py-3">Added</th>
-                  <th className="px-4 py-3">Added by</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -876,14 +1039,11 @@ function Uploaders(props: {
                       <td className="whitespace-nowrap px-4 py-3 text-neutral-400">
                         {formatDate(entry.addedAt)}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-neutral-500">
-                        {shortHex(encodeNpub(entry.addedBy), 8)}
-                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() => void remove(entry.pubkey)}
+                          onClick={() => setPendingRemove(entry)}
                           className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Delete
@@ -919,6 +1079,15 @@ function Uploaders(props: {
           </div>
         </div>
       </section>
+
+      {pendingRemove !== null && (
+        <RemoveUploaderDialog
+          uploader={pendingRemove}
+          removing={saving}
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={() => void confirmRemove()}
+        />
+      )}
     </div>
   );
 }
