@@ -88,7 +88,7 @@ For production, set it with `wrangler secret put ADMIN_NPUB`. Do not put it dire
 
 | Name | Default | Description |
 |---|---|---|
-| `MAX_UPLOAD_BYTES` | `10485760` (10 MiB) | Maximum size of a single upload |
+| `MAX_UPLOAD_BYTES` | `26214400` (25 MiB) | Maximum size of a single upload |
 | `ENABLE_MIRROR` | `true` | Whether to enable BUD-04 `/mirror` |
 
 ## Upload permissions
@@ -140,7 +140,7 @@ Removing an npub from the allowlist does not delete blobs that user has already 
 
 - BUD-05 (media optimization) and BUD-07 (payments) are not implemented
 - There is no per-user storage quota
-- The maximum upload size is capped at 25 MiB to stay within Worker memory limits
+- The default maximum upload size is 25 MiB, which is also the hard cap to stay within Worker memory limits
 - BUD-11 authorization tokens have a maximum lifetime of one hour; delete tokens are single-use
 - Reports must reference existing blobs, are limited to 20 per pubkey per hour and 100 globally per hour, and are retained for 30 days
 - BUD-12 cursors that point to a deleted blob remain usable for seven days

@@ -414,13 +414,13 @@ describe("blob deletion", () => {
 });
 
 describe("upload limits", () => {
-  it("handles fractional and out-of-range configuration", () => {
+  it("defaults invalid configuration to 25 MiB", () => {
     const envWith = (value: string) =>
       ({ MAX_UPLOAD_BYTES: value }) as unknown as Env;
 
-    expect(getMaxUploadBytes(envWith("0.5"))).toBe(10 * 1024 * 1024);
-    expect(getMaxUploadBytes(envWith("0"))).toBe(10 * 1024 * 1024);
-    expect(getMaxUploadBytes(envWith("-1"))).toBe(10 * 1024 * 1024);
+    expect(getMaxUploadBytes(envWith("0.5"))).toBe(25 * 1024 * 1024);
+    expect(getMaxUploadBytes(envWith("0"))).toBe(25 * 1024 * 1024);
+    expect(getMaxUploadBytes(envWith("-1"))).toBe(25 * 1024 * 1024);
     expect(getMaxUploadBytes(envWith("1"))).toBe(1);
     expect(getMaxUploadBytes(envWith("999999999"))).toBe(25 * 1024 * 1024);
   });

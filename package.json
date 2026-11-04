@@ -23,7 +23,7 @@
         "description": "npub (or 64-character hex pubkey) of the administrator allowed to sign in to the admin panel."
       },
       "MAX_UPLOAD_BYTES": {
-        "description": "Maximum size of a single upload in bytes. Defaults to 10 MiB."
+        "description": "Maximum size of a single upload in bytes. Defaults to 25 MiB."
       },
       "ENABLE_MIRROR": {
         "description": "Set to true to enable BUD-04 /mirror."
