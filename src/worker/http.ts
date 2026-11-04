@@ -12,7 +12,7 @@ export class HttpError extends Error {
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Expose-Headers":
-    "X-Reason, X-Next-Cursor, X-SHA-256, Content-Length, Content-Range, Accept-Ranges",
+    "X-Reason, X-Next-Cursor, X-SHA-256, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified",
 };
 
 export function withCors(response: Response): Response {
@@ -33,7 +33,7 @@ export function corsPreflight(): Response {
     headers: {
       ...CORS_HEADERS,
       "Access-Control-Allow-Headers":
-        "Authorization, Content-Type, X-SHA-256, X-Content-Type, X-Content-Length, Range",
+        "Authorization, Content-Type, X-SHA-256, X-Content-Type, X-Content-Length, Range, If-Range",
       "Access-Control-Allow-Methods": "GET, HEAD, PUT, DELETE, OPTIONS",
       "Access-Control-Max-Age": "86400",
     },
@@ -100,19 +100,78 @@ export async function readBodyWithLimit(
   maxBytes: number,
 ): Promise<ArrayBuffer> {
   const contentLength = request.headers.get("content-length");
+  let expectedLength: number | undefined;
+
   if (contentLength !== null) {
-    const length = Number(contentLength);
-    if (!Number.isInteger(length) || length < 0) {
+    expectedLength = Number(contentLength);
+    if (!Number.isInteger(expectedLength) || expectedLength < 0) {
       throw new HttpError(400, "invalid content-length");
     }
-    if (length > maxBytes) {
+    if (expectedLength > maxBytes) {
       throw new HttpError(413, "request body is too large");
     }
   }
 
-  const body = await request.arrayBuffer();
-  if (body.byteLength > maxBytes) {
-    throw new HttpError(413, "request body is too large");
+  return readStreamWithLimit(request.body, maxBytes, expectedLength);
+}
+
+export async function readStreamWithLimit(
+  stream: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+  expectedLength?: number,
+): Promise<ArrayBuffer> {
+  const reader = stream?.getReader();
+  if (!reader) {
+    return new ArrayBuffer(0);
   }
-  return body;
+
+  const preallocated = expectedLength !== undefined &&
+      Number.isSafeInteger(expectedLength) &&
+      expectedLength >= 0 &&
+      expectedLength <= maxBytes
+    ? new Uint8Array(expectedLength)
+    : null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+
+      if (
+        total + value.byteLength > maxBytes ||
+        (preallocated !== null && total + value.byteLength > preallocated.length)
+      ) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The limit error below is the meaningful failure.
+        }
+        throw new HttpError(413, "request body is too large");
+      }
+
+      if (preallocated !== null) {
+        preallocated.set(value, total);
+      } else {
+        chunks.push(value);
+      }
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (preallocated !== null) {
+    return preallocated.buffer.slice(0, total);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer;
 }

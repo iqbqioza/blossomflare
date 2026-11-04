@@ -10,6 +10,7 @@ import {
   listBlobs,
   listReports,
   listUploaders,
+  isUploaderCursor,
   parseLimit,
   removeUploader,
   setUploadPolicy,
@@ -63,7 +64,7 @@ export async function handleAdmin(
       return methodNotAllowed("GET");
     }
     const cursor = url.searchParams.get("cursor");
-    if (cursor !== null && !isPubkey(cursor)) {
+    if (cursor !== null && !isUploaderCursor(cursor)) {
       return errorResponse(400, "invalid cursor");
     }
     const limit = parseLimit(url.searchParams.get("limit"));
@@ -154,16 +155,18 @@ async function updateSettings(
     return errorResponse(400, "request body is required");
   }
 
-  let parsed: { uploadPolicy?: unknown };
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(new TextDecoder().decode(body)) as {
-      uploadPolicy?: unknown;
-    };
+    parsed = JSON.parse(new TextDecoder().decode(body));
   } catch {
     return errorResponse(400, "invalid JSON body");
   }
 
-  const policy = parsed.uploadPolicy;
+  if (parsed === null || typeof parsed !== "object") {
+    return errorResponse(400, "invalid JSON body");
+  }
+
+  const policy = (parsed as { uploadPolicy?: unknown }).uploadPolicy;
   if (policy !== "open" && policy !== "allowlist") {
     return errorResponse(400, "uploadPolicy must be open or allowlist");
   }

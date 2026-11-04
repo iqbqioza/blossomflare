@@ -1,6 +1,6 @@
 import { verifyEvent, type Event } from "nostr-tools/pure";
 import { decode } from "nostr-tools/nip19";
-import { decodeBase64Url } from "./base64url";
+import { decodeBase64, decodeBase64Url } from "./base64url";
 import { sha256Hex } from "./crypto";
 import { HttpError } from "./http";
 import type { Env } from "./types";
@@ -12,7 +12,9 @@ export class AuthError extends HttpError {
   }
 }
 
-const CLOCK_SKEW_SECONDS = 300;
+export const BLOSSOM_CLOCK_SKEW_SECONDS = 30;
+const MAX_BLOSSOM_TOKEN_LIFETIME_SECONDS = 60 * 60;
+const NIP98_WINDOW_SECONDS = 60;
 const MAX_AUTH_TOKEN_CHARS = 64 * 1024;
 
 export function getTagValues(event: Event, name: string): string[] {
@@ -45,7 +47,14 @@ export function isEventShape(value: unknown): value is Event {
   );
 }
 
-export async function readAuthEvent(request: Request): Promise<Event> {
+interface AuthEventOptions {
+  allowStandardBase64?: boolean;
+}
+
+export async function readAuthEvent(
+  request: Request,
+  options: AuthEventOptions = {},
+): Promise<Event> {
   const header = request.headers.get("authorization");
   if (!header) {
     throw new AuthError(401, "missing authorization");
@@ -62,7 +71,16 @@ export async function readAuthEvent(request: Request): Promise<Event> {
     if (token.length > MAX_AUTH_TOKEN_CHARS) {
       throw new Error("token too large");
     }
-    const text = new TextDecoder().decode(decodeBase64Url(token));
+
+    let bytes: Uint8Array;
+    try {
+      bytes = decodeBase64Url(token);
+    } catch (error) {
+      if (options.allowStandardBase64 !== true) throw error;
+      bytes = decodeBase64(token);
+    }
+
+    const text = new TextDecoder().decode(bytes);
     event = JSON.parse(text);
   } catch {
     throw new AuthError(401, "invalid authorization token");
@@ -101,7 +119,7 @@ export async function verifyBlossomAuth(
   if (event.kind !== 24242) {
     throw new AuthError(401, "authorization event must be kind 24242");
   }
-  if (event.created_at > now + CLOCK_SKEW_SECONDS) {
+  if (event.created_at > now + BLOSSOM_CLOCK_SKEW_SECONDS) {
     throw new AuthError(401, "authorization event is from the future");
   }
 
@@ -110,6 +128,15 @@ export async function verifyBlossomAuth(
     .filter((value) => Number.isInteger(value));
   if (expirations.length === 0 || !expirations.some((value) => value > now)) {
     throw new AuthError(401, "authorization event is expired");
+  }
+  if (
+    Math.max(...expirations) >
+    event.created_at + MAX_BLOSSOM_TOKEN_LIFETIME_SECONDS
+  ) {
+    throw new AuthError(
+      401,
+      "authorization expiration is too far in the future",
+    );
   }
 
   if (!getTagValues(event, "t").includes(options.action)) {
@@ -125,7 +152,8 @@ export async function verifyBlossomAuth(
   }
 
   if (options.sha256 !== undefined) {
-    if (!getTagValues(event, "x").includes(options.sha256.toLowerCase())) {
+    const hashes = getTagValues(event, "x").map((value) => value.toLowerCase());
+    if (!hashes.includes(options.sha256.toLowerCase())) {
       throw new AuthError(401, "authorization blob hash does not match");
     }
   }
@@ -138,7 +166,7 @@ export async function verifyAdminRequest(
   adminPubkey: string,
   body: ArrayBuffer | undefined,
 ): Promise<Event> {
-  const event = await readAuthEvent(request);
+  const event = await readAuthEvent(request, { allowStandardBase64: true });
   const now = Math.floor(Date.now() / 1000);
 
   if (event.kind !== 27235) {
@@ -147,15 +175,18 @@ export async function verifyAdminRequest(
   if (event.pubkey !== adminPubkey) {
     throw new AuthError(403, "not an administrator");
   }
-  if (Math.abs(event.created_at - now) > CLOCK_SKEW_SECONDS) {
+  if (Math.abs(event.created_at - now) > NIP98_WINDOW_SECONDS) {
     throw new AuthError(401, "admin authorization timestamp is invalid");
   }
 
-  const expirations = getTagValues(event, "expiration")
-    .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value));
-  if (expirations.length === 0 || !expirations.some((value) => value > now)) {
-    throw new AuthError(401, "admin authorization is expired");
+  const rawExpirations = getTagValues(event, "expiration");
+  if (rawExpirations.length > 0) {
+    const expirations = rawExpirations
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value));
+    if (expirations.length === 0 || !expirations.some((value) => value > now)) {
+      throw new AuthError(401, "admin authorization is expired");
+    }
   }
 
   if (!getTagValues(event, "u").includes(request.url)) {

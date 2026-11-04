@@ -32,7 +32,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "deploy": "pnpm db:migrate:remote && wrangler deploy",
+    "deploy": "pnpm build && pnpm db:migrate:remote && wrangler deploy",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "dev": "pnpm build && wrangler dev",
