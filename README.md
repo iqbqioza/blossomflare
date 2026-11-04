@@ -17,6 +17,8 @@ During deployment you will be asked for the **admin npub** (or a 64-character he
 
 > **R2 must be enabled.** If you have not enabled R2 in your Cloudflare account yet, enable it from the dashboard first. The free tier may still require billing information.
 
+> **Durable Objects are required.** Upload, delete, and mirror operations are serialized per blob using a Durable Object. Make sure Durable Objects are available on your Cloudflare plan.
+
 ### After deployment
 
 1. Open the deployed URL (`https://<worker-name>.<subdomain>.workers.dev/`)
@@ -137,7 +139,11 @@ Removing an npub from the allowlist does not delete blobs that user has already 
 
 - BUD-05 (media optimization) and BUD-07 (payments) are not implemented
 - There is no per-user storage quota
-- The maximum upload size is capped at 50 MiB to stay within Worker memory limits
+- The maximum upload size is capped at 25 MiB to stay within Worker memory limits
+- BUD-11 authorization tokens have a maximum lifetime of one hour; delete tokens are single-use
+- Reports are limited to 20 per pubkey per hour and must reference existing blobs
+- BUD-12 cursors that point to a deleted blob remain usable for seven days
+- Preview deployments intentionally have no production D1/R2/DO bindings; configure separate preview resources to use the API
 - `/list/<pubkey>` is implemented for administrative use, although BUD-12 marks it as unrecommended
 - The admin panel is intended for desktop browsers with a NIP-07 extension
 

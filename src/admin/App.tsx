@@ -267,7 +267,11 @@ function Blobs(props: { onError: (error: unknown) => void }) {
         setNextCursor(result.nextCursor);
       })
       .catch((error) => {
-        if (!cancelled) props.onError(error);
+        if (!cancelled) {
+          setBlobs([]);
+          setNextCursor(null);
+          props.onError(error);
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -523,7 +527,11 @@ function Uploaders(props: {
         setNextCursor(result.nextCursor);
       })
       .catch((error) => {
-        if (!cancelled) props.onError(error);
+        if (!cancelled) {
+          setUploaders([]);
+          setNextCursor(null);
+          props.onError(error);
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -807,7 +815,11 @@ function Reports(props: { onError: (error: unknown) => void }) {
         setNextCursor(result.nextCursor);
       })
       .catch((error) => {
-        if (!cancelled) props.onError(error);
+        if (!cancelled) {
+          setReports([]);
+          setNextCursor(null);
+          props.onError(error);
+        }
       })
       .finally(() => {
         if (!cancelled) {

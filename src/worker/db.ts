@@ -65,7 +65,10 @@ export async function canUpload(env: Env, pubkey: string): Promise<boolean> {
 const UPLOADER_CURSOR_PATTERN = /^(\d+):([0-9a-f]{64})$/;
 
 export function isUploaderCursor(value: string): boolean {
-  return UPLOADER_CURSOR_PATTERN.test(value);
+  const match = UPLOADER_CURSOR_PATTERN.exec(value);
+  if (!match) return false;
+  const addedAt = Number(match[1]);
+  return Number.isSafeInteger(addedAt) && addedAt >= 0;
 }
 
 export async function listUploaders(
@@ -155,12 +158,27 @@ export async function removeUploader(
   return (result.meta.changes ?? 0) > 0;
 }
 
+export async function consumeAuthEvent(
+  env: Env,
+  eventId: string,
+  expires: number,
+): Promise<boolean> {
+  const now = nowSeconds();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO used_auth_events (id, expires) VALUES (?, ?)",
+    ).bind(eventId, expires),
+    env.DB.prepare("DELETE FROM used_auth_events WHERE expires < ?").bind(now),
+  ]);
+  return (results[0]?.meta.changes ?? 0) > 0;
+}
+
 export async function getBlobMeta(
   env: Env,
   sha256: string,
 ): Promise<BlobMeta | null> {
   return env.DB.prepare(
-    `SELECT sha256, pubkey, size, type, filename, uploaded
+    `SELECT upload_id AS uploadId, sha256, pubkey, size, type, filename, uploaded
      FROM blobs
      WHERE sha256 = ?`,
   )
@@ -175,8 +193,8 @@ export async function insertBlob(
   const results = await env.DB.batch([
     env.DB.prepare(
       `INSERT OR IGNORE INTO blobs
-         (sha256, pubkey, size, type, filename, uploaded)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+         (sha256, pubkey, size, type, filename, uploaded, upload_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       meta.sha256,
       meta.pubkey,
@@ -184,6 +202,7 @@ export async function insertBlob(
       meta.type,
       meta.filename,
       meta.uploaded,
+      meta.uploadId ?? crypto.randomUUID(),
     ),
     env.DB.prepare("DELETE FROM blob_tombstones WHERE sha256 = ?").bind(
       meta.sha256,
@@ -218,19 +237,37 @@ const TOMBSTONE_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 export async function tombstoneBlob(
   env: Env,
   meta: BlobMeta,
-): Promise<void> {
+): Promise<boolean> {
+  if (meta.uploadId === undefined) {
+    return false;
+  }
+
   const deletedAt = nowSeconds();
-  await env.DB.batch([
+  const results = await env.DB.batch([
     env.DB.prepare(
       `INSERT OR REPLACE INTO blob_tombstones
          (sha256, pubkey, uploaded, deleted_at)
-       VALUES (?, ?, ?, ?)`,
-    ).bind(meta.sha256, meta.pubkey, meta.uploaded, deletedAt),
-    env.DB.prepare("DELETE FROM blobs WHERE sha256 = ?").bind(meta.sha256),
+       SELECT ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM blobs WHERE upload_id = ? AND sha256 = ?
+       )`,
+    ).bind(
+      meta.sha256,
+      meta.pubkey,
+      meta.uploaded,
+      deletedAt,
+      meta.uploadId,
+      meta.sha256,
+    ),
+    env.DB.prepare(
+      "DELETE FROM blobs WHERE upload_id = ? AND sha256 = ?",
+    ).bind(meta.uploadId, meta.sha256),
     env.DB.prepare("DELETE FROM blob_tombstones WHERE deleted_at < ?").bind(
       deletedAt - TOMBSTONE_RETENTION_SECONDS,
     ),
   ]);
+
+  return (results[1]?.meta.changes ?? 0) > 0;
 }
 
 export async function listBlobs(
@@ -295,6 +332,30 @@ export async function getStats(env: Env): Promise<Stats> {
     reportCount: reports?.count ?? 0,
     uploaderCount: uploaders?.count ?? 0,
   };
+}
+
+export async function consumeReportQuota(
+  env: Env,
+  pubkey: string,
+  maxPerHour: number,
+): Promise<boolean> {
+  const windowStart = Math.floor(nowSeconds() / 3600);
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO report_rate_limits (pubkey, window_start, count)
+       VALUES (?, ?, 1)
+       ON CONFLICT(pubkey, window_start) DO UPDATE SET count = count + 1`,
+    ).bind(pubkey, windowStart),
+    env.DB.prepare(
+      `SELECT count FROM report_rate_limits
+       WHERE pubkey = ? AND window_start = ?`,
+    ).bind(pubkey, windowStart),
+    env.DB.prepare(
+      "DELETE FROM report_rate_limits WHERE window_start < ?",
+    ).bind(windowStart - 24),
+  ]);
+  const row = results[1]?.results[0] as { count?: number } | undefined;
+  return (row?.count ?? maxPerHour + 1) <= maxPerHour;
 }
 
 export async function insertReport(

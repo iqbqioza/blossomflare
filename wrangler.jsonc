@@ -9,8 +9,22 @@
     "enabled": true
   },
   "previews": {
-    // Previews intentionally have no production D1/R2 bindings.
+    // Previews intentionally have no production D1/R2/DO bindings.
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BLOB_COORDINATOR",
+        "class_name": "BlobCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["BlobCoordinator"]
+    }
+  ],
   "assets": {
     "directory": "./dist/admin",
     "binding": "ASSETS",

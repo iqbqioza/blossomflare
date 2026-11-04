@@ -1,6 +1,6 @@
 import { isEventShape } from "./auth";
 import { verifyEvent } from "nostr-tools/pure";
-import { insertReport } from "./db";
+import { consumeReportQuota, insertReport } from "./db";
 import {
   errorResponse,
   HttpError,
@@ -54,7 +54,7 @@ export async function handleReport(
     .filter((tag) => tag[0] === "x" && typeof tag[1] === "string")
     .map((tag) => tag[1] as string);
   if (hashes.length === 0 || hashes.length > MAX_REPORT_HASHES) {
-    return errorResponse(400, "report must reference 1-20 blob hashes");
+    return errorResponse(400, "report must include 1-20 x tags");
   }
   if (!hashes.every(isSha256)) {
     return errorResponse(400, "report must reference valid blob hashes");
@@ -72,13 +72,7 @@ export async function handleReport(
     return errorResponse(400, "report must reference existing blobs");
   }
 
-  const recent = await env.DB.prepare(
-    `SELECT COUNT(*) AS count FROM reports
-     WHERE pubkey = ? AND received_at > ?`,
-  )
-    .bind(event.pubkey, Math.floor(Date.now() / 1000) - 60 * 60)
-    .first<{ count: number }>();
-  if ((recent?.count ?? 0) >= MAX_REPORTS_PER_HOUR) {
+  if (!(await consumeReportQuota(env, event.pubkey, MAX_REPORTS_PER_HOUR))) {
     return errorResponse(429, "too many reports from this pubkey");
   }
 

@@ -128,7 +128,8 @@ export async function readStreamWithLimit(
   const preallocated = expectedLength !== undefined &&
       Number.isSafeInteger(expectedLength) &&
       expectedLength >= 0 &&
-      expectedLength <= maxBytes
+      expectedLength <= maxBytes &&
+      expectedLength <= 1024 * 1024
     ? new Uint8Array(expectedLength)
     : null;
   const chunks: Uint8Array[] = [];
@@ -164,7 +165,9 @@ export async function readStreamWithLimit(
   }
 
   if (preallocated !== null) {
-    return preallocated.buffer.slice(0, total);
+    return total === preallocated.length
+      ? preallocated.buffer
+      : preallocated.buffer.slice(0, total);
   }
 
   const body = new Uint8Array(total);

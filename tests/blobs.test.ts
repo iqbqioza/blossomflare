@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { SELF } from "cloudflare:test";
+import { getMaxUploadBytes } from "../src/worker/blobs";
+import { getBlobMeta, tombstoneBlob } from "../src/worker/db";
 import { sha256Hex } from "../src/worker/crypto";
+import type { Env } from "../src/worker/types";
 import {
   ADMIN_URL,
   adminSecret,
@@ -146,6 +149,14 @@ describe("blob retrieval", () => {
     );
   });
 
+  it("accepts a long file extension", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+    const response = await SELF.fetch(`${ADMIN_URL}/${sha256}.webmanifest`);
+    expect(response.status).toBe(200);
+  });
+
   it("returns 404 for an unknown blob", async () => {
     const response = await SELF.fetch(`${ADMIN_URL}/${"ab".repeat(32)}`);
     expect(response.status).toBe(404);
@@ -180,6 +191,25 @@ describe("blob upload", () => {
 
     const second = await uploadAs(user.secret, pngBytes);
     expect(second.response.status).toBe(200);
+  });
+
+  it("serializes concurrent uploads of the same blob", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => uploadAs(user.secret, pngBytes)),
+    );
+    const statuses = results.map((result) => result.response.status);
+    expect(statuses.filter((status) => status === 201)).toHaveLength(1);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(4);
+
+    const row = await testEnv.DB.prepare(
+      "SELECT COUNT(*) AS count FROM blobs WHERE sha256 = ?",
+    )
+      .bind(await sha256Hex(pngBytes))
+      .first<{ count: number }>();
+    expect(row?.count).toBe(1);
   });
 
   it("returns 409 when X-SHA-256 does not match the body", async () => {
@@ -253,6 +283,41 @@ describe("blob deletion", () => {
     expect(deleted.status).toBe(204);
   });
 
+  it("serializes concurrent deletes of the same blob", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+
+    const tokens = [
+      blossomAuth(user.secret, {
+        action: "delete",
+        hash: sha256,
+        createdAtOffset: -1,
+      }),
+      blossomAuth(user.secret, {
+        action: "delete",
+        hash: sha256,
+      }),
+    ];
+
+    const responses = await Promise.all(
+      tokens.map((authorization) =>
+        SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+          method: "DELETE",
+          headers: { Authorization: authorization },
+        })
+      ),
+    );
+    const statuses = responses.map((response) => response.status);
+    expect(statuses.filter((status) => status === 204)).toHaveLength(1);
+    expect(
+      statuses.filter((status) => status === 404 || status === 409),
+    ).toHaveLength(1);
+
+    const fetched = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    expect(fetched.status).toBe(404);
+  });
+
   it("returns 404 when deleting a missing blob", async () => {
     const user = newUser();
     const deleted = await deleteAs(user.secret, "ab".repeat(32));
@@ -263,7 +328,6 @@ describe("blob deletion", () => {
     const user = newUser();
     await allowUploader(user.pubkey);
     const { sha256 } = await uploadAs(user.secret, pngBytes);
-    const tokenCreatedAt = Math.floor(Date.now() / 1000);
     const replayToken = blossomAuth(user.secret, {
       action: "delete",
       hash: sha256,
@@ -277,11 +341,6 @@ describe("blob deletion", () => {
 
     const reuploaded = await uploadAs(user.secret, pngBytes);
     expect(reuploaded.response.status).toBe(201);
-    await testEnv.DB.prepare(
-      "UPDATE blobs SET uploaded = ? WHERE sha256 = ?",
-    )
-      .bind(tokenCreatedAt + 100, sha256)
-      .run();
 
     const replay = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
       method: "DELETE",
@@ -291,6 +350,53 @@ describe("blob deletion", () => {
 
     const stillThere = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
     expect(stillThere.status).toBe(200);
+  });
+
+  it("accepts a delete token with a past created_at within the lifetime", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+    const authorization = blossomAuth(user.secret, {
+      action: "delete",
+      hash: sha256,
+      createdAtOffset: -31,
+    });
+
+    const deleted = await SELF.fetch(`${ADMIN_URL}/${sha256}`, {
+      method: "DELETE",
+      headers: { Authorization: authorization },
+    });
+    expect(deleted.status).toBe(204);
+  });
+
+  it("does not delete a newer upload with stale metadata", async () => {
+    const user = newUser();
+    await allowUploader(user.pubkey);
+    const { sha256 } = await uploadAs(user.secret, pngBytes);
+    const stale = await getBlobMeta(testEnv, sha256);
+    expect(stale).not.toBeNull();
+
+    expect((await deleteAs(user.secret, sha256)).status).toBe(204);
+    expect((await uploadAs(user.secret, pngBytes)).response.status).toBe(201);
+
+    expect(await tombstoneBlob(testEnv, stale as NonNullable<typeof stale>)).toBe(
+      false,
+    );
+    const stillThere = await SELF.fetch(`${ADMIN_URL}/${sha256}`);
+    expect(stillThere.status).toBe(200);
+  });
+});
+
+describe("upload limits", () => {
+  it("handles fractional and out-of-range configuration", () => {
+    const envWith = (value: string) =>
+      ({ MAX_UPLOAD_BYTES: value }) as unknown as Env;
+
+    expect(getMaxUploadBytes(envWith("0.5"))).toBe(10 * 1024 * 1024);
+    expect(getMaxUploadBytes(envWith("0"))).toBe(10 * 1024 * 1024);
+    expect(getMaxUploadBytes(envWith("-1"))).toBe(10 * 1024 * 1024);
+    expect(getMaxUploadBytes(envWith("1"))).toBe(1);
+    expect(getMaxUploadBytes(envWith("999999999"))).toBe(25 * 1024 * 1024);
   });
 });
 
